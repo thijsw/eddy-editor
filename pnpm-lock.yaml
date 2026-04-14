@@ -8,6 +8,9 @@ importers:
 
   .:
     devDependencies:
+      '@lucide/vue':
+        specifier: ^1.8.0
+        version: 1.8.0(vue@3.5.32(typescript@5.9.3))
       '@playwright/test':
         specifier: ^1.59.1
         version: 1.59.1
@@ -129,6 +132,11 @@ packages:
 
   '@jridgewell/sourcemap-codec@1.5.5':
     resolution: {integrity: sha512-cYQ9310grqxueWbl+WuIUIaiUaDcj7WOq5fVhEljNVgRfOUhY9fy2zTvfoqWsnebh8Sl70VScFbICvJnLKB0Og==}
+
+  '@lucide/vue@1.8.0':
+    resolution: {integrity: sha512-Rgy2rxfOx9yP6fWneE3QO6xwUbF2o7f9+MRbzGLRakee4tzUeVWHdX23uRH4ymwEzoq2+8vqRI9yGsxeZhYlWw==}
+    peerDependencies:
+      vue: '>=3.0.1'
 
   '@microsoft/api-extractor-model@7.33.6':
     resolution: {integrity: sha512-E9iI4yGEVVusbTAqSLetVFxDuBVCVqCigcoQwdJuOjsLq5Hry3MkBgUQhSZNzLCu17pgjk58MI80GRDJLht/1A==}
@@ -1134,6 +1142,10 @@ snapshots:
   '@exodus/bytes@1.15.0': {}
 
   '@jridgewell/sourcemap-codec@1.5.5': {}
+
+  '@lucide/vue@1.8.0(vue@3.5.32(typescript@5.9.3))':
+    dependencies:
+      vue: 3.5.32(typescript@5.9.3)
 
   '@microsoft/api-extractor-model@7.33.6(@types/node@25.6.0)':
     dependencies:

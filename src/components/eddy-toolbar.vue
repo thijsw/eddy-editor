@@ -11,16 +11,30 @@
       :aria-pressed="activeStates.get(plugin.name) ?? false"
       @mousedown.prevent="plugin.command(api!)"
     >
-      <component :is="plugin.toolbar!.icon" v-if="plugin.toolbar!.icon" />
+      <component :is="resolveIcon(plugin)" v-if="resolveIcon(plugin)" :size="16" />
       <span v-else>{{ plugin.toolbar!.label }}</span>
     </button>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, inject } from 'vue'
-import { EDDY_INJECTION_KEY } from '../types'
+import { computed, inject, type Component } from 'vue'
+import { EDDY_INJECTION_KEY, type EddyPlugin } from '../types'
 import { useEditorState } from '../use-editor-state'
+import {
+  Bold,
+  Italic,
+  Underline,
+  Strikethrough,
+  List,
+  ListOrdered,
+  Heading1,
+  Heading2,
+  Heading3,
+  Heading4,
+  Heading5,
+  Heading6,
+} from '@lucide/vue'
 
 const provision = inject(EDDY_INJECTION_KEY)
 if (!provision) {
@@ -31,12 +45,30 @@ if (!provision) {
 
 const { api } = provision
 
-// Access plugins through the provision object (not destructured) so the
-// computed always reads the getter, preserving reactivity.
 const toolbarPlugins = computed(() =>
   provision.plugins.filter((p) => p.toolbar != null),
 )
 
-// Reactive Map of plugin.name → isActive; refreshes on selectionchange / input
 const activeStates = useEditorState(api, provision.plugins)
+
+// Default icons for built-in plugins. Consumers can override by setting
+// toolbar.icon on their plugin — that takes priority.
+const defaultIcons: Record<string, Component> = {
+  bold: Bold,
+  italic: Italic,
+  underline: Underline,
+  strikethrough: Strikethrough,
+  unorderedList: List,
+  orderedList: ListOrdered,
+  heading1: Heading1,
+  heading2: Heading2,
+  heading3: Heading3,
+  heading4: Heading4,
+  heading5: Heading5,
+  heading6: Heading6,
+}
+
+function resolveIcon(plugin: EddyPlugin): Component | undefined {
+  return plugin.toolbar?.icon ?? defaultIcons[plugin.name]
+}
 </script>

@@ -19,7 +19,7 @@ export default defineConfig({
       fileName: () => 'eddy-editor.js',
     },
     rolldownOptions: {
-      external: ['vue'],
+      external: ['vue', '@lucide/vue'],
     },
     sourcemap: true,
     emptyOutDir: true,

@@ -1,9 +1,8 @@
 import { createPlugin } from '../create-plugin'
-import { StrikethroughIcon } from '../icons'
 
 export const strikethrough = createPlugin({
   name: 'strikethrough',
-  toolbar: { label: 'S', title: 'Strikethrough', icon: StrikethroughIcon },
+  toolbar: { label: 'S', title: 'Strikethrough' },
   command(api) { api.toggleMark('strikethrough') },
   isActive(api) { return api.isMarkActive('strikethrough') },
 })

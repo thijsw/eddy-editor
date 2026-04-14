@@ -30,19 +30,3 @@ export type { ASTPosition, ASTSelection } from './ast/selection'
 export { parseHTML } from './ast/parse'
 export { serializeToHTML } from './ast/serialize'
 
-// Icons — individually tree-shakeable; also usable as reference implementations
-// for consumers who want to override built-in plugin icons with lucide-vue-next
-export {
-  BoldIcon,
-  ItalicIcon,
-  UnderlineIcon,
-  StrikethroughIcon,
-  ListIcon,
-  ListOrderedIcon,
-  Heading1Icon,
-  Heading2Icon,
-  Heading3Icon,
-  Heading4Icon,
-  Heading5Icon,
-  Heading6Icon,
-} from './icons'

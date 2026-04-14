@@ -44,9 +44,11 @@
     "test:unit": "vitest run"
   },
   "peerDependencies": {
-    "vue": "^3.0.0"
+    "vue": "^3.0.0",
+    "@lucide/vue": "^1.0.0"
   },
   "devDependencies": {
+    "@lucide/vue": "^1.8.0",
     "@playwright/test": "^1.59.1",
     "@types/node": "^25.6.0",
     "@vitejs/plugin-vue": "^6.0.0",
