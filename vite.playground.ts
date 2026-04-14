@@ -7,6 +7,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 
 export default defineConfig({
   root: 'playground',
+  base: '/eddy-editor/',
   resolve: {
     alias: {
       'eddy-editor': resolve(__dirname, 'src/index.ts'),

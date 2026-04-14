@@ -2,6 +2,8 @@
 
 A lightweight WYSIWYG text editor for Vue 3. AST-based, zero runtime dependencies, fully typed.
 
+[Live demo](https://thijsw.github.io/eddy-editor/)
+
 ## Features
 
 - **AST document model** -- content is a typed tree, not raw HTML. Schema rules enforce valid structure (e.g. lists cannot nest inside paragraphs).
