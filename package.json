@@ -41,7 +41,8 @@
     "build": "vue-tsc --noEmit && vite build",
     "typecheck": "vue-tsc --noEmit",
     "test": "playwright test",
-    "test:unit": "vitest run"
+    "test:unit": "vitest run",
+    "prepare": "git config core.hooksPath .githooks"
   },
   "peerDependencies": {
     "vue": "^3.0.0",

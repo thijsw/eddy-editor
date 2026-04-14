@@ -1,0 +1,8 @@
+#!/bin/sh
+# Pre-commit hook: update bundle size in README.md
+
+# Only run if source files are staged (skip docs-only commits)
+if git diff --cached --name-only | grep -qE '^src/'; then
+  ./scripts/update-bundle-size.sh
+  git add README.md
+fi
