@@ -1,0 +1,40 @@
+{
+  "name": "eddy-editor",
+  "version": "0.1.0",
+  "type": "module",
+  "packageManager": "pnpm@10.33.0",
+  "description": "A lightweight Vue 3 WYSIWYG text editor",
+  "license": "MIT",
+  "files": [
+    "dist",
+    "style.css"
+  ],
+  "main": "./dist/eddy-editor.js",
+  "module": "./dist/eddy-editor.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/eddy-editor.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./style.css": "./style.css"
+  },
+  "scripts": {
+    "dev": "vite --config vite.playground.ts",
+    "dev:lib": "vite build --watch",
+    "build": "vue-tsc --noEmit && vite build",
+    "typecheck": "vue-tsc --noEmit"
+  },
+  "peerDependencies": {
+    "vue": "^3.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "@vitejs/plugin-vue": "^6.0.0",
+    "typescript": "^5.8.3",
+    "vite": "^8.0.0",
+    "vite-plugin-dts": "^4.5.3",
+    "vue": "^3.5.13",
+    "vue-tsc": "^2.2.10"
+  }
+}

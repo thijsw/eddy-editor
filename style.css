@@ -1,0 +1,117 @@
+:root {
+  --eddy-border: 1px solid #d1d5db;
+  --eddy-border-radius: 0.375rem;
+  --eddy-focus-ring-color: #3b82f6;
+  --eddy-toolbar-bg: #f9fafb;
+  --eddy-toolbar-btn-hover-bg: #e5e7eb;
+  --eddy-toolbar-btn-active-bg: #e5e7eb;
+  --eddy-toolbar-btn-active-color: inherit;
+  --eddy-min-height: 200px;
+  --eddy-padding: 0.75rem 1rem;
+  --eddy-font-family: inherit;
+  --eddy-font-size: inherit;
+  --eddy-line-height: 1.6;
+}
+
+.eddy-wrapper {
+  border: var(--eddy-border);
+  border-radius: var(--eddy-border-radius);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.eddy-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.125rem;
+  padding: 0.375rem 0.5rem;
+  background: var(--eddy-toolbar-bg);
+  border-bottom: var(--eddy-border);
+}
+
+.eddy-toolbar-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2rem;
+  height: 2rem;
+  padding: 0 0.375rem;
+  border: none;
+  border-radius: 0.25rem;
+  background: transparent;
+  color: inherit;
+  font-family: var(--eddy-font-family);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.eddy-toolbar-btn:hover {
+  background: var(--eddy-toolbar-btn-hover-bg);
+}
+
+.eddy-toolbar-btn.is-active {
+  background: var(--eddy-toolbar-btn-active-bg);
+  color: var(--eddy-toolbar-btn-active-color);
+  font-weight: 700;
+}
+
+.eddy-editor {
+  flex: 1;
+  padding: var(--eddy-padding);
+  min-height: var(--eddy-min-height);
+  font-family: var(--eddy-font-family);
+  font-size: var(--eddy-font-size);
+  line-height: var(--eddy-line-height);
+  outline: none;
+  overflow-y: auto;
+}
+
+.eddy-editor:focus {
+  box-shadow: inset 0 0 0 2px var(--eddy-focus-ring-color);
+}
+
+/* Sensible content styles */
+.eddy-editor h1,
+.eddy-editor h2,
+.eddy-editor h3,
+.eddy-editor h4,
+.eddy-editor h5,
+.eddy-editor h6 {
+  margin: 0.75em 0 0.25em;
+  line-height: 1.25;
+}
+
+.eddy-editor h1 { font-size: 2em; }
+.eddy-editor h2 { font-size: 1.5em; }
+.eddy-editor h3 { font-size: 1.25em; }
+.eddy-editor h4 { font-size: 1.125em; }
+.eddy-editor h5 { font-size: 1em; }
+.eddy-editor h6 { font-size: 0.875em; }
+
+.eddy-editor p {
+  margin: 0.5em 0;
+}
+
+.eddy-editor p:first-child,
+.eddy-editor h1:first-child,
+.eddy-editor h2:first-child,
+.eddy-editor h3:first-child,
+.eddy-editor h4:first-child,
+.eddy-editor h5:first-child,
+.eddy-editor h6:first-child {
+  margin-top: 0;
+}
+
+.eddy-editor ul,
+.eddy-editor ol {
+  margin: 0.5em 0;
+  padding-left: 1.5em;
+}
+
+.eddy-editor li {
+  margin: 0.25em 0;
+}
