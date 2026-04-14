@@ -23,12 +23,14 @@
     "dev": "vite --config vite.playground.ts",
     "dev:lib": "vite build --watch",
     "build": "vue-tsc --noEmit && vite build",
-    "typecheck": "vue-tsc --noEmit"
+    "typecheck": "vue-tsc --noEmit",
+    "test": "playwright test"
   },
   "peerDependencies": {
     "vue": "^3.0.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.59.1",
     "@types/node": "^25.6.0",
     "@vitejs/plugin-vue": "^6.0.0",
     "typescript": "^5.8.3",
