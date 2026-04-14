@@ -3,14 +3,16 @@ import { bold } from './bold'
 import { italic } from './italic'
 import { underline } from './underline'
 import { strikethrough } from './strikethrough'
-import { heading1 } from './heading-1'
-import { heading2 } from './heading-2'
-import { heading3 } from './heading-3'
-import { heading4 } from './heading-4'
-import { heading5 } from './heading-5'
-import { heading6 } from './heading-6'
+import { createHeadingPlugin } from './create-heading-plugin'
 import { unorderedList } from './unordered-list'
 import { orderedList } from './ordered-list'
+
+export const heading1 = createHeadingPlugin(1)
+export const heading2 = createHeadingPlugin(2)
+export const heading3 = createHeadingPlugin(3)
+export const heading4 = createHeadingPlugin(4)
+export const heading5 = createHeadingPlugin(5)
+export const heading6 = createHeadingPlugin(6)
 
 export const defaultPlugins: EddyPlugin[] = [
   bold,
