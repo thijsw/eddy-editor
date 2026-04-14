@@ -5,6 +5,22 @@
   "packageManager": "pnpm@10.33.0",
   "description": "A lightweight Vue 3 WYSIWYG text editor",
   "license": "MIT",
+  "author": "Thijs Wijnmaalen",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/thijsw/eddy-editor.git"
+  },
+  "homepage": "https://github.com/thijsw/eddy-editor#readme",
+  "bugs": "https://github.com/thijsw/eddy-editor/issues",
+  "keywords": [
+    "vue",
+    "editor",
+    "wysiwyg",
+    "rich-text",
+    "contenteditable",
+    "vue3",
+    "ast"
+  ],
   "files": [
     "dist",
     "style.css"
