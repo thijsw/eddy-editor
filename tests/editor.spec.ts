@@ -415,14 +415,15 @@ test('realistic: build a bullet list by pressing Enter between items', async ({ 
   expect(output).toContain('Third')
 })
 
-test('realistic: activating bold with no selection makes typed text bold', async ({ page }) => {
+test('realistic: clicking bold with no selection is a no-op', async ({ page }) => {
   await clearAndType(page, 'Start ')
-  // Cursor is at end of "Start " — activate bold mode with no selection
+  // Cursor is at end of "Start " — click bold with no selection
   await page.click(BTN.bold)
-  await page.keyboard.type('bold part')
+  await page.keyboard.type('plain part')
   const output = await getOutput(page)
-  // The typed text should be inside a bold tag
-  expect(output).toMatch(/<(b|strong)>bold part<\/(b|strong)>/)
+  // Text should NOT be bold — toggleMark is a no-op on collapsed cursor
+  expect(output).not.toMatch(/<(b|strong)>/)
+  expect(output).toContain('Start plain part')
 })
 
 test('realistic: switch heading level directly from H1 to H2', async ({ page }) => {

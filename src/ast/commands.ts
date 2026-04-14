@@ -20,6 +20,81 @@ export interface CommandResult {
   selection: ASTSelection
 }
 
+// ── Position remapping ────────────────────────────────────────────────────────
+
+/**
+ * Converts an inline position (inlineIndex + offset) to a flat character
+ * offset within an inlines array, then resolves it back to (inlineIndex, offset)
+ * in a new inlines array. Text content is the same, only node boundaries differ.
+ */
+/**
+ * Remaps every position in a selection from oldDoc's inline structure
+ * to newDoc's inline structure. Used after transforms that change node
+ * boundaries (mark splits, schema merges) but preserve text content.
+ */
+export function remapSelection(
+  oldDoc: DocumentNode,
+  newDoc: DocumentNode,
+  sel: ASTSelection,
+): ASTSelection {
+  let anchor = sel.anchor
+  let head = sel.head
+  for (let blockIndex = 0; blockIndex < oldDoc.children.length && blockIndex < newDoc.children.length; blockIndex++) {
+    const oldBlock = oldDoc.children[blockIndex]
+    const newBlock = newDoc.children[blockIndex]
+    if (!oldBlock || !newBlock) continue
+    if (oldBlock.type === 'list' && newBlock.type === 'list') {
+      for (let itemIndex = 0; itemIndex < oldBlock.items.length && itemIndex < newBlock.items.length; itemIndex++) {
+        anchor = remapPosition(oldBlock.items[itemIndex].children, newBlock.items[itemIndex].children, anchor, blockIndex, itemIndex)
+        head = remapPosition(oldBlock.items[itemIndex].children, newBlock.items[itemIndex].children, head, blockIndex, itemIndex)
+      }
+    } else if (oldBlock.type !== 'list' && newBlock.type !== 'list') {
+      anchor = remapPosition(oldBlock.children, newBlock.children, anchor, blockIndex, 0)
+      head = remapPosition(oldBlock.children, newBlock.children, head, blockIndex, 0)
+    }
+  }
+  return { anchor, head }
+}
+
+function remapPosition(
+  oldInlines: InlineNode[],
+  newInlines: InlineNode[],
+  pos: ASTPosition,
+  blockIndex: number,
+  itemIndex: number,
+): ASTPosition {
+  if (pos.blockIndex !== blockIndex || pos.itemIndex !== itemIndex) return pos
+
+  // Convert to flat character offset in old inlines
+  let charOffset = 0
+  for (let i = 0; i < pos.inlineIndex && i < oldInlines.length; i++) {
+    const node = oldInlines[i]
+    charOffset += node.type === 'text' ? node.text.length : 1
+  }
+  charOffset += pos.offset
+
+  // Resolve flat offset to (inlineIndex, offset) in new inlines
+  let remaining = charOffset
+  for (let i = 0; i < newInlines.length; i++) {
+    const node = newInlines[i]
+    const len = node.type === 'text' ? node.text.length : 1
+    if (remaining <= len) {
+      return { blockIndex, itemIndex, inlineIndex: i, offset: remaining }
+    }
+    remaining -= len
+  }
+
+  // Past end — clamp to end of last node
+  const last = newInlines.length - 1
+  const lastNode = newInlines[last]
+  return {
+    blockIndex,
+    itemIndex,
+    inlineIndex: Math.max(0, last),
+    offset: lastNode?.type === 'text' ? lastNode.text.length : 0,
+  }
+}
+
 // ── Inline helpers ────────────────────────────────────────────────────────────
 
 function splitTextAt(node: TextNode, offset: number): [TextNode, TextNode] {
@@ -73,18 +148,12 @@ export function toggleMark(
   doc: DocumentNode,
   sel: ASTSelection,
   mark: MarkType,
-  storedMarks: Mark[],
-): CommandResult & { storedMarks: Mark[] | null } {
+): CommandResult {
   if (isCollapsed(sel)) {
-    // Toggle stored marks for subsequent typing
-    const hasIt = storedMarks.some((m) => m.type === mark)
-    const newStoredMarks = hasIt
-      ? storedMarks.filter((m) => m.type !== mark)
-      : [...storedMarks, { type: mark }]
-    return { doc, selection: sel, storedMarks: newStoredMarks }
+    return { doc, selection: sel }
   }
 
-  const active = isMarkActive(doc, sel, storedMarks, mark)
+  const active = isMarkActive(doc, sel, mark)
   const [start, end] = normalizeSelection(sel)
 
   let newDoc = doc
@@ -103,7 +172,32 @@ export function toggleMark(
     }
   }
 
-  return { doc: newDoc, selection: sel, storedMarks: null }
+  // Remap selection through the changed inline structure.
+  // Text splits change node boundaries but not character content,
+  // so flat character offsets are stable across the transform.
+  let newAnchor = sel.anchor
+  let newHead = sel.head
+  for (let blockIndex = start.blockIndex; blockIndex <= end.blockIndex; blockIndex++) {
+    const block = newDoc.children[blockIndex]
+    if (!block) continue
+    if (block.type === 'list') {
+      const startItem = blockIndex === start.blockIndex ? start.itemIndex : 0
+      const endItem = blockIndex === end.blockIndex ? end.itemIndex : block.items.length - 1
+      for (let itemIndex = startItem; itemIndex <= endItem; itemIndex++) {
+        const oldInlines = getInlines(doc, blockIndex, itemIndex)
+        const newInlines = getInlines(newDoc, blockIndex, itemIndex)
+        newAnchor = remapPosition(oldInlines, newInlines, newAnchor, blockIndex, itemIndex)
+        newHead = remapPosition(oldInlines, newInlines, newHead, blockIndex, itemIndex)
+      }
+    } else {
+      const oldInlines = getInlines(doc, blockIndex, 0)
+      const newInlines = getInlines(newDoc, blockIndex, 0)
+      newAnchor = remapPosition(oldInlines, newInlines, newAnchor, blockIndex, 0)
+      newHead = remapPosition(oldInlines, newInlines, newHead, blockIndex, 0)
+    }
+  }
+
+  return { doc: newDoc, selection: { anchor: newAnchor, head: newHead } }
 }
 
 function applyMarkToInlines(

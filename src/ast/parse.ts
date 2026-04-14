@@ -32,8 +32,7 @@ function tagToMark(tag: string): MarkType | null {
 
 function parseInline(node: Node, inheritedMarks: Mark[]): InlineNode[] {
   if (node.nodeType === Node.TEXT_NODE) {
-    // Strip zero-width spaces injected by storedMark cursor wrappers
-    const text = (node.textContent ?? '').replace(/\u200B/g, '')
+    const text = node.textContent ?? ''
     if (text === '') return []
     const textNode: TextNode = { type: 'text', text, marks: [...inheritedMarks] }
     return [textNode]

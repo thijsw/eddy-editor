@@ -93,6 +93,7 @@ onMounted(() => {
   impl = apiImpl
   api.value = apiImpl
   internalValue = props.modelValue
+
 })
 
 // ── Model sync ────────────────────────────────────────────────────────────────

@@ -80,10 +80,10 @@ describe('parseHTML', () => {
     expect(doc.children[0].type).toBe('paragraph')
   })
 
-  it('strips zero-width spaces', () => {
+  it('preserves zero-width spaces in text', () => {
     const doc = parseHTML('<p>\u200Bhello\u200B</p>')
     const text = (doc.children[0] as any).children[0].text
-    expect(text).toBe('hello')
+    expect(text).toBe('\u200Bhello\u200B')
   })
 
   it('unwraps bare <span> tags', () => {

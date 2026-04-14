@@ -1,4 +1,4 @@
-import type { DocumentNode, InlineNode, Mark, MarkType, TextNode } from './types'
+import type { DocumentNode, InlineNode, MarkType, TextNode } from './types'
 import type { ASTSelection } from './selection'
 import { normalizeSelection } from './selection'
 
@@ -9,16 +9,14 @@ function hasMark(node: TextNode, mark: MarkType): boolean {
 }
 
 /**
- * Returns true if the given mark is active across the entire selection.
+ * Returns true if the given mark is active at the cursor or across the selection.
  *
- * For a collapsed selection (cursor): checks storedMarks.
+ * For a collapsed selection: checks the text node at cursor position.
  * For a range: returns true only if ALL text nodes in the selection have the mark.
- * Empty text nodes and hard breaks are skipped.
  */
 export function isMarkActive(
   doc: DocumentNode,
   sel: ASTSelection,
-  storedMarks: Mark[],
   mark: MarkType,
 ): boolean {
   const [start, end] = normalizeSelection(sel)
@@ -29,11 +27,6 @@ export function isMarkActive(
     start.offset === end.offset
 
   if (isCollapsed) {
-    // If there are explicit stored marks, use those (user toggled a mark at cursor)
-    if (storedMarks.length > 0) {
-      return storedMarks.some((m) => m.type === mark)
-    }
-    // Otherwise check the marks of the text node at cursor position
     const block = doc.children[start.blockIndex]
     if (block) {
       const inlines = block.type === 'list'

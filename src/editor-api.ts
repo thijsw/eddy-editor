@@ -1,5 +1,5 @@
 import type { EditorAPI } from './types'
-import type { DocumentNode, Mark, MarkType } from './ast/types'
+import type { DocumentNode, MarkType } from './ast/types'
 import type { ASTSelection } from './ast/selection'
 import type { HistoryStack } from './ast/history'
 import { parseLiveDOM } from './ast/parse'
@@ -12,6 +12,7 @@ import {
   toggleList as cmdToggleList,
   insertParagraph as cmdInsertParagraph,
   insertHardBreak as cmdInsertHardBreak,
+  remapSelection,
 } from './ast/commands'
 import {
   isMarkActive as inspectMarkActive,
@@ -26,7 +27,6 @@ export class EditorAPIImpl implements EditorAPI {
   private _el: HTMLElement | null = null
   private _doc: DocumentNode = { type: 'document', children: [{ type: 'paragraph', children: [{ type: 'text', text: '', marks: [] }] }] }
   private _selection: ASTSelection | null = null
-  private _storedMarks: Mark[] = []
   private _history: HistoryStack = createHistory(this._doc, null)
   private _historyDebounce: ReturnType<typeof setTimeout> | null = null
   private _suppressInputSync = false
@@ -86,6 +86,11 @@ export class EditorAPIImpl implements EditorAPI {
     return serializeToHTML(this._doc)
   }
 
+  /**
+   * Clears stored marks and removes any ZWS cursor wrapper injected by
+   * a previous toggleMark on a collapsed selection. Called on selectionchange
+   * so that moving the cursor cancels the "type with this mark" mode.
+   */
   // ── Commands ──────────────────────────────────────────────────────────────
 
   toggleMark(mark: MarkType): void {
@@ -93,16 +98,11 @@ export class EditorAPIImpl implements EditorAPI {
     if (!this._selection) return
     this._pushHistoryNow()
 
-    const result = cmdToggleMark(this._doc, this._selection, mark, this._storedMarks)
+    const result = cmdToggleMark(this._doc, this._selection, mark)
+    const preSchemaDoc = result.doc
     this._doc = applySchema(result.doc, defaultRules)
-    this._selection = result.selection
-    if (result.storedMarks !== null) {
-      this._storedMarks = result.storedMarks
-      this._injectStoredMarkCursor()
-    } else {
-      this._storedMarks = []
-      this._renderDOM()
-    }
+    this._selection = remapSelection(preSchemaDoc, this._doc, result.selection)
+    this._renderDOM()
     this._notifyChange()
   }
 
@@ -114,7 +114,6 @@ export class EditorAPIImpl implements EditorAPI {
     const result = cmdSetBlockType(this._doc, this._selection, type, attrs)
     this._doc = applySchema(result.doc, defaultRules)
     this._selection = result.selection
-    this._storedMarks = []
     this._renderDOM()
     this._notifyChange()
   }
@@ -127,7 +126,6 @@ export class EditorAPIImpl implements EditorAPI {
     const result = cmdToggleList(this._doc, this._selection, ordered)
     this._doc = applySchema(result.doc, defaultRules)
     this._selection = result.selection
-    this._storedMarks = []
     this._renderDOM()
     this._notifyChange()
   }
@@ -140,7 +138,6 @@ export class EditorAPIImpl implements EditorAPI {
     const result = cmdInsertParagraph(this._doc, this._selection)
     this._doc = applySchema(result.doc, defaultRules)
     this._selection = result.selection
-    this._storedMarks = []
     this._renderDOM()
     this._notifyChange()
   }
@@ -153,7 +150,6 @@ export class EditorAPIImpl implements EditorAPI {
     const result = cmdInsertHardBreak(this._doc, this._selection)
     this._doc = applySchema(result.doc, defaultRules)
     this._selection = result.selection
-    this._storedMarks = []
     this._renderDOM()
     this._notifyChange()
   }
@@ -163,7 +159,7 @@ export class EditorAPIImpl implements EditorAPI {
   isMarkActive(mark: MarkType): boolean {
     this._readSelectionFromDOM()
     if (!this._selection) return false
-    return inspectMarkActive(this._doc, this._selection, this._storedMarks, mark)
+    return inspectMarkActive(this._doc, this._selection, mark)
   }
 
   getBlockType(): 'paragraph' | 'heading' | 'list' | 'mixed' {
@@ -196,7 +192,6 @@ export class EditorAPIImpl implements EditorAPI {
     const entry = historyCurrent(this._history)
     this._doc = entry.doc
     this._selection = entry.selection
-    this._storedMarks = []
     this._renderDOM()
     this._notifyChange()
   }
@@ -208,7 +203,6 @@ export class EditorAPIImpl implements EditorAPI {
     const entry = historyCurrent(this._history)
     this._doc = entry.doc
     this._selection = entry.selection
-    this._storedMarks = []
     this._renderDOM()
     this._notifyChange()
   }
@@ -228,51 +222,6 @@ export class EditorAPIImpl implements EditorAPI {
       applySelection(this._el, this._doc, this._selection)
     }
     this._suppressInputSync = false
-  }
-
-  /**
-   * Injects empty mark wrapper elements into the live DOM and places the
-   * cursor inside them so the browser naturally types within the marks.
-   */
-  private _injectStoredMarkCursor(): void {
-    if (!this._el || this._storedMarks.length === 0) return
-
-    const sel = window.getSelection()
-    if (!sel || sel.rangeCount === 0) return
-    const range = sel.getRangeAt(0)
-    if (!range.collapsed) return
-
-    const MARK_TO_TAG: Record<string, string> = {
-      bold: 'strong',
-      italic: 'em',
-      underline: 'u',
-      strikethrough: 's',
-    }
-
-    let innermost: HTMLElement | null = null
-    let outermost: HTMLElement | null = null
-    for (const mark of this._storedMarks) {
-      const tag = MARK_TO_TAG[mark.type]
-      if (!tag) continue
-      const el = document.createElement(tag)
-      if (!outermost) outermost = el
-      if (innermost) {
-        innermost.appendChild(el)
-      }
-      innermost = el
-    }
-
-    if (!outermost || !innermost) return
-
-    const zws = document.createTextNode('\u200B')
-    innermost.appendChild(zws)
-    range.insertNode(outermost)
-
-    const newRange = document.createRange()
-    newRange.setStart(zws, 1)
-    newRange.collapse(true)
-    sel.removeAllRanges()
-    sel.addRange(newRange)
   }
 
   private _pushHistoryNow(): void {

@@ -6,59 +6,60 @@ import {
   insertParagraph,
   insertHardBreak,
   deleteContent,
+  remapSelection,
 } from '../../src/ast/commands'
-import { doc, p, h, text, li, ul, ol, br, pos, cursor, range, marks } from './helpers'
+import { doc, p, h, text, li, ul, ol, br, pos, cursor, range } from './helpers'
 
 // ── toggleMark ────────────────────────────────────────────────────────────────
 
 describe('toggleMark', () => {
-  it('adds bold to a plain text range', () => {
+  it('adds bold to a plain text range and preserves selection', () => {
     const d = doc(p(text('hello world')))
     const sel = range(pos(0, 0, 0), pos(0, 0, 5))
-    const result = toggleMark(d, sel, 'bold', [])
+    const result = toggleMark(d, sel, 'bold')
     const children = (result.doc.children[0] as any).children
     expect(children[0]).toEqual(text('hello', 'bold'))
     expect(children[1]).toEqual(text(' world'))
+    // Selection should cover the marked text in the new structure
+    expect(result.selection.anchor).toEqual(pos(0, 0, 0))
+    expect(result.selection.head).toEqual(pos(0, 0, 5))
   })
 
   it('removes bold from an already-bold range', () => {
     const d = doc(p(text('hello', 'bold'), text(' world')))
     const sel = range(pos(0, 0, 0), pos(0, 0, 5))
-    const result = toggleMark(d, sel, 'bold', [])
+    const result = toggleMark(d, sel, 'bold')
     const children = (result.doc.children[0] as any).children
     expect(children[0].marks).toEqual([])
     expect(children[0].text).toBe('hello')
   })
 
-  it('adds mark to partial text node (splits at boundaries)', () => {
+  it('adds mark to partial text node and remaps selection', () => {
     const d = doc(p(text('hello world')))
     const sel = range(pos(0, 0, 6), pos(0, 0, 11))
-    const result = toggleMark(d, sel, 'italic', [])
+    const result = toggleMark(d, sel, 'italic')
     const children = (result.doc.children[0] as any).children
     expect(children[0]).toEqual(text('hello '))
     expect(children[1]).toEqual(text('world', 'italic'))
+    // After split: "hello " is inlineIndex 0 (len 6), "world" is inlineIndex 1 (len 5)
+    // Anchor at flat offset 6 → end of node 0 (0, 6), head at flat 11 → end of node 1 (1, 5)
+    // Both boundary representations are valid; astPositionToDOM resolves them correctly.
+    expect(result.selection.anchor).toEqual(pos(0, 0, 6))
+    expect(result.selection.head).toEqual(pos(0, 1, 5))
   })
 
-  it('toggles stored marks on collapsed cursor', () => {
+  it('is a no-op on collapsed cursor', () => {
     const d = doc(p(text('hello')))
     const sel = cursor(0, 0, 5)
-    const result = toggleMark(d, sel, 'bold', [])
-    expect(result.storedMarks).toEqual(marks('bold'))
-    // Doc unchanged
+    const result = toggleMark(d, sel, 'bold')
     expect(result.doc).toEqual(d)
-  })
-
-  it('toggles off stored marks when already active', () => {
-    const d = doc(p(text('hello')))
-    const sel = cursor(0, 0, 5)
-    const result = toggleMark(d, sel, 'bold', marks('bold'))
-    expect(result.storedMarks).toEqual([])
+    expect(result.selection).toEqual(sel)
   })
 
   it('spans multiple blocks', () => {
     const d = doc(p(text('aaa')), p(text('bbb')))
     const sel = range(pos(0, 0, 1), pos(1, 0, 2))
-    const result = toggleMark(d, sel, 'bold', [])
+    const result = toggleMark(d, sel, 'bold')
     const p0 = (result.doc.children[0] as any).children
     const p1 = (result.doc.children[1] as any).children
     expect(p0[0]).toEqual(text('a'))
@@ -70,17 +71,47 @@ describe('toggleMark', () => {
   it('spans paragraph into list item', () => {
     const d = doc(p(text('aaa')), ul(li(text('bbb'))))
     const sel = range(pos(0, 0, 1), pos(1, 0, 2, 0))
-    const result = toggleMark(d, sel, 'bold', [])
+    const result = toggleMark(d, sel, 'bold')
     const para = (result.doc.children[0] as any).children
     const item = (result.doc.children[1] as any).items[0].children
     expect(para[1]).toEqual(text('aa', 'bold'))
     expect(item[0]).toEqual(text('bb', 'bold'))
   })
 
+  it('selection survives add→remove round-trip with schema merge', () => {
+    // Simulates: select "formatting" in "Try formatting this", underline, then un-underline.
+    // After removing the mark, normalizeSiblingText merges nodes back.
+    // The selection must still cover only "formatting".
+    const d = doc(p(text('Try '), text('formatting', 'underline'), text(' this')))
+    const sel = range(pos(0, 0, 4), pos(0, 1, 10))
+    const result = toggleMark(d, sel, 'underline')
+    // After removing underline, all three nodes have empty marks
+    const children = (result.doc.children[0] as any).children
+    expect(children.length).toBe(3)
+    expect(children[1].marks).toEqual([])
+    // remapSelection (called by EditorAPIImpl after applySchema merges nodes)
+    // would remap (0,4)→(1,10) through the merged single-node structure.
+    // Verify the pre-schema selection is correct:
+    expect(result.selection.anchor).toEqual(pos(0, 0, 4))
+    expect(result.selection.head).toEqual(pos(0, 1, 10))
+  })
+
+  it('remapSelection maps through schema merge correctly', () => {
+    // Pre-schema: 3 text nodes. Post-schema: 1 merged text node.
+    const preMerge = doc(p(text('Try '), text('formatting'), text(' this')))
+    const postMerge = doc(p(text('Try formatting this')))
+    const sel = range(pos(0, 0, 4), pos(0, 1, 10))
+    const remapped = remapSelection(preMerge, postMerge, sel)
+    // Flat offset of anchor: 4 chars into "Try " → 4 in merged → (0, 4)
+    expect(remapped.anchor).toEqual(pos(0, 0, 4))
+    // Flat offset of head: 4 ("Try ") + 10 ("formatting") = 14 in merged → (0, 14)
+    expect(remapped.head).toEqual(pos(0, 0, 14))
+  })
+
   it('preserves existing marks when adding a new one', () => {
     const d = doc(p(text('hello', 'italic')))
     const sel = range(pos(0, 0, 0), pos(0, 0, 5))
-    const result = toggleMark(d, sel, 'bold', [])
+    const result = toggleMark(d, sel, 'bold')
     const node = (result.doc.children[0] as any).children[0]
     expect(node.marks).toContainEqual({ type: 'italic' })
     expect(node.marks).toContainEqual({ type: 'bold' })
