@@ -38,8 +38,9 @@ function serializeInline(node: InlineNode): string {
     (a, b) => MARK_ORDER.indexOf(a.type) - MARK_ORDER.indexOf(b.type),
   )
 
-  // Wrap text in nested mark tags (outermost mark first)
-  return orderedMarks.reduce((inner, mark) => {
+  // Wrap text in nested mark tags — reduce right-to-left so the first
+  // mark in MARK_ORDER becomes the outermost wrapper.
+  return orderedMarks.reduceRight((inner, mark) => {
     const tag = MARK_TO_TAG[mark.type]
     return `<${tag}>${inner}</${tag}>`
   }, text)
