@@ -86,11 +86,6 @@ export class EditorAPIImpl implements EditorAPI {
     return serializeToHTML(this._doc)
   }
 
-  /**
-   * Clears stored marks and removes any ZWS cursor wrapper injected by
-   * a previous toggleMark on a collapsed selection. Called on selectionchange
-   * so that moving the cursor cancels the "type with this mark" mode.
-   */
   // ── Commands ──────────────────────────────────────────────────────────────
 
   toggleMark(mark: MarkType): void {
