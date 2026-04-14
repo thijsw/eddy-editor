@@ -18,7 +18,7 @@ export { isCollapsed, positionsEqual, normalizeSelection, comparePositions, coll
 export { parseHTML, parseLiveDOM } from './parse'
 export { serializeToHTML } from './serialize'
 
-export { domPositionToAST, astPositionToDOM, readSelection, applySelection, selectionAtStart, selectionAtEnd } from './dom-mapping'
+export { domPositionToAST, astPositionToDOM, readSelection, applySelection } from './dom-mapping'
 
 export type { CommandResult } from './commands'
 export { toggleMark, setBlockType, toggleList, insertParagraph, insertHardBreak, deleteContent } from './commands'

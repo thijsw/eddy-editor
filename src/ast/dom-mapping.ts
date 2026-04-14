@@ -1,6 +1,5 @@
-import type { DocumentNode, ListNode } from './types'
+import type { DocumentNode } from './types'
 import type { ASTPosition, ASTSelection } from './selection'
-import { collapsedAt } from './selection'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -271,39 +270,3 @@ export function applySelection(
   }
 }
 
-/**
- * Returns an ASTSelection that places the cursor at the very start of the document.
- */
-export function selectionAtStart(): ASTSelection {
-  return collapsedAt({ blockIndex: 0, itemIndex: 0, inlineIndex: 0, offset: 0 })
-}
-
-/**
- * Returns an ASTSelection at the end of the given document.
- */
-export function selectionAtEnd(doc: DocumentNode): ASTSelection {
-  const lastBlockIndex = doc.children.length - 1
-  const lastBlock = doc.children[lastBlockIndex]
-  if (!lastBlock) return selectionAtStart()
-
-  if (lastBlock.type === 'list') {
-    const lastItemIndex = lastBlock.items.length - 1
-    const lastItem = lastBlock.items[lastItemIndex]
-    const lastInlineIndex = lastItem.children.length - 1
-    const lastInline = lastItem.children[lastInlineIndex]
-    const offset = lastInline?.type === 'text' ? lastInline.text.length : 0
-    return collapsedAt({ blockIndex: lastBlockIndex, itemIndex: lastItemIndex, inlineIndex: lastInlineIndex, offset })
-  }
-
-  const lastInlineIndex = lastBlock.children.length - 1
-  const lastInline = lastBlock.children[lastInlineIndex]
-  const offset = lastInline?.type === 'text' ? lastInline.text.length : 0
-  return collapsedAt({ blockIndex: lastBlockIndex, itemIndex: 0, inlineIndex: lastInlineIndex, offset })
-}
-
-// ── List node helpers ─────────────────────────────────────────────────────────
-
-export function isOrderedList(doc: DocumentNode, blockIndex: number): boolean {
-  const block = doc.children[blockIndex]
-  return block?.type === 'list' && (block as ListNode).ordered
-}

@@ -11,16 +11,6 @@ export function applySchema(doc: DocumentNode, rules: SchemaRule[]): DocumentNod
 // ── Default rules ─────────────────────────────────────────────────────────────
 
 /**
- * Wraps bare inline content at document root into a paragraph.
- * This can happen when parsing malformed HTML input.
- */
-export function inlinesInBlocks(doc: DocumentNode): DocumentNode {
-  // With our typed AST this can't happen structurally — children are always BlockNode[].
-  // This rule exists as a safety net and is a no-op.
-  return doc
-}
-
-/**
  * Removes list nodes with zero items.
  */
 export function emptyListsRemoved(doc: DocumentNode): DocumentNode {
