@@ -235,6 +235,8 @@ test('list: unordered list button creates ul > li', async ({ page }) => {
   const output = await getOutput(page)
   expect(output).toContain('<ul>')
   expect(output).toContain('<li>')
+  // <ul> must not be nested inside a <p> — invalid HTML
+  expect(output).not.toMatch(/<p[^>]*>\s*<ul/)
 })
 
 test('list: ordered list button creates ol > li', async ({ page }) => {
@@ -243,6 +245,8 @@ test('list: ordered list button creates ol > li', async ({ page }) => {
   const output = await getOutput(page)
   expect(output).toContain('<ol>')
   expect(output).toContain('<li>')
+  // <ol> must not be nested inside a <p> — invalid HTML
+  expect(output).not.toMatch(/<p[^>]*>\s*<ol/)
 })
 
 test('list: unordered list toggles off', async ({ page }) => {
@@ -251,6 +255,37 @@ test('list: unordered list toggles off', async ({ page }) => {
   await page.click(BTN.ul)
   const output = await getOutput(page)
   expect(output).not.toContain('<ul>')
+})
+
+// ── Style hygiene ─────────────────────────────────────────────────────────────
+
+test('style hygiene: toggling unordered list off leaves no inline styles or bare spans', async ({ page }) => {
+  await clearAndType(page, 'Some text')
+  await page.click(BTN.ul)
+  await page.click(BTN.ul)
+  const output = await getOutput(page)
+  expect(output).not.toContain('style=')
+  expect(output).not.toMatch(/<span>/)
+})
+
+test('style hygiene: toggling ordered list off leaves no inline styles or bare spans', async ({ page }) => {
+  await clearAndType(page, 'Some text')
+  await page.click(BTN.ol)
+  await page.click(BTN.ol)
+  const output = await getOutput(page)
+  expect(output).not.toContain('style=')
+  expect(output).not.toMatch(/<span>/)
+})
+
+test('style hygiene: toggling list off with mixed content (bold inline) leaves no inline styles or bare spans', async ({ page }) => {
+  // Mirrors the reported bug: the playground's initial content contains <strong>Eddy</strong>
+  // which caused Chromium to inject <span style="font-size: 16px"> when toggling the list off.
+  await selectAll(page)
+  await page.click(BTN.ul)
+  await page.click(BTN.ul)
+  const output = await getOutput(page)
+  expect(output).not.toContain('style=')
+  expect(output).not.toMatch(/<span>/)
 })
 
 // ── v-model sync ──────────────────────────────────────────────────────────────

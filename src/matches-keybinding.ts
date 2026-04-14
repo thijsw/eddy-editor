@@ -18,14 +18,11 @@ export function matchesKeybinding(event: KeyboardEvent, binding: string): boolea
   const needsShift = parts.includes('shift')
   const needsAlt = parts.includes('alt')
 
-  const isMac =
-    typeof navigator !== 'undefined' && /mac/i.test(navigator.platform)
-
+  // "mod" means Cmd on Mac, Ctrl elsewhere. Accept either modifier key
+  // so shortcuts work regardless of platform detection in headless browsers.
   const modSatisfied = needsMod
-    ? isMac
-      ? event.metaKey
-      : event.ctrlKey
-    : !(isMac ? event.metaKey : event.ctrlKey)
+    ? event.metaKey || event.ctrlKey
+    : !event.metaKey && !event.ctrlKey
 
   return (
     event.key.toLowerCase() === key &&

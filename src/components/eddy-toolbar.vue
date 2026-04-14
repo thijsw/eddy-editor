@@ -7,10 +7,12 @@
       class="eddy-toolbar-btn"
       :class="{ 'is-active': activeStates.get(plugin.name) }"
       :title="plugin.toolbar!.title"
+      :aria-label="plugin.toolbar!.title"
       :aria-pressed="activeStates.get(plugin.name) ?? false"
       @mousedown.prevent="plugin.command(api!)"
     >
-      {{ plugin.toolbar!.label }}
+      <component :is="plugin.toolbar!.icon" v-if="plugin.toolbar!.icon" />
+      <span v-else>{{ plugin.toolbar!.label }}</span>
     </button>
   </div>
 </template>

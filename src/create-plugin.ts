@@ -6,12 +6,12 @@ import type { EddyPlugin } from './types'
  * consumers writing custom plugins.
  *
  * @example
- * const highlightPlugin = createPlugin({
+ * const myPlugin = createPlugin({
  *   name: 'highlight',
  *   keybinding: 'mod+h',
  *   toolbar: { label: 'H', title: 'Highlight' },
- *   command(api) { api.execute('hiliteColor', 'yellow') },
- *   isActive(api) { return api.getCommandValue('hiliteColor') === 'yellow' },
+ *   command(api) { api.toggleMark('bold') },
+ *   isActive(api) { return api.isMarkActive('bold') },
  * })
  */
 export function createPlugin(config: EddyPlugin): EddyPlugin {

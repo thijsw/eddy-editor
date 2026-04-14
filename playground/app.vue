@@ -7,7 +7,7 @@
     <main class="playground-main">
       <section class="demo-section">
         <h2 class="section-title">Editor</h2>
-        <eddy-editor v-model="content" :plugins="[markPlugin]">
+        <eddy-editor v-model="content">
           <template #toolbar>
             <eddy-toolbar />
           </template>
@@ -24,17 +24,9 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import { EddyEditor, EddyToolbar, createPlugin } from 'eddy-editor'
+import { EddyEditor, EddyToolbar } from 'eddy-editor'
 
 const content = ref('<p>Welcome to the <strong>Eddy</strong> editor playground. Try formatting this text!</p>')
-
-// Example custom plugin — demonstrates the plugin API
-const markPlugin = createPlugin({
-  name: 'mark',
-  toolbar: { label: 'Mark', title: 'Highlight text' },
-  command(api) { api.execute('hiliteColor', 'mark') },
-  isActive(api) { return api.getCommandValue('hiliteColor') === 'mark' },
-})
 </script>
 
 <style scoped>

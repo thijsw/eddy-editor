@@ -53,6 +53,11 @@
   background: var(--eddy-toolbar-btn-hover-bg);
 }
 
+.eddy-toolbar-btn svg {
+  display: block;
+  flex-shrink: 0;
+}
+
 .eddy-toolbar-btn.is-active {
   background: var(--eddy-toolbar-btn-active-bg);
   color: var(--eddy-toolbar-btn-active-color);

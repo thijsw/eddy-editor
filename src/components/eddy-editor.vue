@@ -13,6 +13,8 @@
       contenteditable="true"
       @input="onInput"
       @keydown="onKeydown"
+      @compositionstart="onCompositionStart"
+      @compositionend="onCompositionEnd"
     />
   </div>
 </template>
@@ -23,6 +25,8 @@ import { EditorAPIImpl } from '../editor-api'
 import { matchesKeybinding } from '../matches-keybinding'
 import { defaultPlugins } from '../plugins/index'
 import { EDDY_INJECTION_KEY, type EditorAPI, type EddyPlugin } from '../types'
+import { parseHTML } from '../ast/parse'
+import { serializeToHTML } from '../ast/serialize'
 
 // ── Props & emits ─────────────────────────────────────────────────────────────
 
@@ -43,6 +47,8 @@ const emit = defineEmits<{
 
 const editorEl = ref<HTMLElement | null>(null)
 const api = ref<EditorAPI | null>(null)
+let impl: EditorAPIImpl | null = null
+let isComposing = false
 
 // ── Plugin merging ────────────────────────────────────────────────────────────
 
@@ -68,11 +74,24 @@ provide(EDDY_INJECTION_KEY, {
 
 onMounted(() => {
   if (!editorEl.value) return
-  const impl = new EditorAPIImpl()
-  impl.attach(editorEl.value)
-  api.value = impl
-  // Set initial HTML content without triggering the watcher fence
+  const apiImpl = new EditorAPIImpl()
+  apiImpl.attach(editorEl.value)
+
+  // Parse initial HTML into AST and initialise
   editorEl.value.innerHTML = props.modelValue
+  const initialDoc = parseHTML(props.modelValue)
+  apiImpl.initDoc(initialDoc, null)
+
+  // Whenever a command modifies the doc, emit updated v-model.
+  // This is necessary because _renderDOM() sets innerHTML directly,
+  // which (unlike execCommand) does not fire a browser input event.
+  apiImpl.onChange(() => {
+    internalValue = serializeToHTML(apiImpl.doc)
+    emit('update:modelValue', internalValue)
+  })
+
+  impl = apiImpl
+  api.value = apiImpl
   internalValue = props.modelValue
 })
 
@@ -86,104 +105,63 @@ let internalValue = props.modelValue
 watch(
   () => props.modelValue,
   (newVal) => {
-    if (newVal !== internalValue && editorEl.value) {
+    if (newVal !== internalValue && editorEl.value && impl) {
       editorEl.value.innerHTML = newVal
+      const doc = parseHTML(newVal)
+      impl.initDoc(doc, null)
       internalValue = newVal
     }
   },
 )
 
 function onInput(): void {
-  if (!editorEl.value) return
-  internalValue = editorEl.value.innerHTML
-  emit('update:modelValue', internalValue)
+  if (!impl || isComposing) return
+  const html = impl.syncFromDOM()
+  if (html !== null) {
+    internalValue = html
+    emit('update:modelValue', internalValue)
+  }
+}
+
+function onCompositionStart(): void {
+  isComposing = true
+}
+
+function onCompositionEnd(): void {
+  isComposing = false
+  onInput()
 }
 
 // ── Keyboard handling ─────────────────────────────────────────────────────────
 
-/**
- * Returns true when the cursor (collapsed selection) sits at the very first
- * character position inside its containing block element.
- *
- * Strategy: cursor must be at offset 0, and every ancestor up to (but not
- * including) the block boundary must have no preceding siblings — meaning
- * there is no content before the cursor within the block.
- */
-function isCursorAtBlockStart(): boolean {
-  const sel = window.getSelection()
-  if (!sel || sel.rangeCount === 0 || !sel.getRangeAt(0).collapsed) return false
-  const range = sel.getRangeAt(0)
-  if (range.startOffset !== 0) return false
-
-  // Walk up the tree; any preceding sibling at any level means content exists
-  // before the cursor in its block. Stop when we reach a block element.
-  let node: Node | null = range.startContainer
-  while (node && node !== editorEl.value) {
-    const tag = node.nodeType === Node.ELEMENT_NODE ? (node as Element).tagName.toLowerCase() : ''
-    if (/^(p|h[1-6]|li|blockquote)$/.test(tag)) {
-      // Reached the block boundary with no preceding content — cursor is at block start
-      return true
-    }
-    if (node.previousSibling) return false
-    node = node.parentNode
-  }
-  return false
-}
-
 function onKeydown(event: KeyboardEvent): void {
-  if (!api.value) return
+  if (!api.value || !impl) return
 
-  if (event.key === 'Enter') {
-    const blockTag = api.value.getCommandValue('formatBlock').toLowerCase()
-    const inHeading = /^h[1-6]$/.test(blockTag)
-
-    if (inHeading) {
-      event.preventDefault()
-      const atStart = isCursorAtBlockStart()
-      api.value.execute('insertParagraph')
-
-      if (atStart) {
-        // Chrome's insertParagraph at position 0 creates an empty heading *before*
-        // the content and leaves the cursor in the heading with content.
-        // We want the cursor in that empty preceding block instead, so we redirect
-        // the selection there and convert it to <p>.
-        //
-        // We call document.execCommand directly (not via api.execute) to avoid the
-        // el.focus() call inside execute() which would reset our manual selection.
-        const sel = window.getSelection()
-        if (sel && sel.rangeCount > 0) {
-          const container = sel.getRangeAt(0).startContainer
-          const headingEl = (container.nodeType === Node.TEXT_NODE
-            ? (container as Text).parentElement
-            : container as Element
-          )?.closest('h1,h2,h3,h4,h5,h6')
-          const emptyBlock = headingEl?.previousElementSibling
-          if (emptyBlock) {
-            const r = document.createRange()
-            r.setStart(emptyBlock, 0)
-            r.collapse(true)
-            sel.removeAllRanges()
-            sel.addRange(r)
-            // eslint-disable-next-line @typescript-eslint/no-deprecated
-            document.execCommand('formatBlock', false, '<p>')
-            return
-          }
-        }
-      }
-
-      // Middle/end of heading: cursor is in the new block after the split — convert it to <p>.
-      api.value.execute('formatBlock', '<p>')
-      return
-    }
-
-    // Shift+Enter outside headings → <br> line break
-    if (event.shiftKey) {
-      event.preventDefault()
-      api.value.execute('insertLineBreak')
-      return
-    }
+  // Undo / Redo
+  if (matchesKeybinding(event, 'mod+z')) {
+    event.preventDefault()
+    impl.undo()
+    return
+  }
+  if (matchesKeybinding(event, 'mod+shift+z')) {
+    event.preventDefault()
+    impl.redo()
+    return
   }
 
+  // Enter key
+  if (event.key === 'Enter' && !event.shiftKey) {
+    event.preventDefault()
+    impl.insertParagraph()
+    return
+  }
+  if (event.key === 'Enter' && event.shiftKey) {
+    event.preventDefault()
+    impl.insertHardBreak()
+    return
+  }
+
+  // Plugin keybindings
   for (const plugin of mergedPlugins.value) {
     if (plugin.keybinding && matchesKeybinding(event, plugin.keybinding)) {
       event.preventDefault()

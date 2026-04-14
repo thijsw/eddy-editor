@@ -23,3 +23,26 @@ export { orderedList } from './plugins/ordered-list'
 
 // Types
 export type { EditorAPI, EddyPlugin, ToolbarConfig, EddyProvision } from './types'
+export type { MarkType, DocumentNode, BlockNode, InlineNode, TextNode, HardBreakNode, ParagraphNode, HeadingNode, ListNode, ListItemNode, Mark } from './ast/types'
+export type { ASTPosition, ASTSelection } from './ast/selection'
+
+// AST utilities — for advanced consumers doing server-side processing
+export { parseHTML } from './ast/parse'
+export { serializeToHTML } from './ast/serialize'
+
+// Icons — individually tree-shakeable; also usable as reference implementations
+// for consumers who want to override built-in plugin icons with lucide-vue-next
+export {
+  BoldIcon,
+  ItalicIcon,
+  UnderlineIcon,
+  StrikethroughIcon,
+  ListIcon,
+  ListOrderedIcon,
+  Heading1Icon,
+  Heading2Icon,
+  Heading3Icon,
+  Heading4Icon,
+  Heading5Icon,
+  Heading6Icon,
+} from './icons'
