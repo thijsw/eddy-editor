@@ -31,8 +31,8 @@ Vue 3 is a peer dependency and must be installed separately.
 ```vue
 <template>
   <eddy-editor v-model="content">
-    <template #toolbar>
-      <eddy-toolbar />
+    <template #toolbar="{ editor, plugins, disabled }">
+      <eddy-toolbar :editor="editor" :plugins="plugins" :disabled="disabled" />
     </template>
   </eddy-editor>
 </template>
@@ -75,7 +75,7 @@ This works for simple cases, but the slot prop is not reactive to selection chan
 
 ### Custom toolbar component with reactive state
 
-For a toolbar that reflects the current formatting at the cursor, create a component that injects the editor context and uses the `useEditorState` composable:
+For a toolbar that reflects the current formatting at the cursor, create a component that receives the slot props and uses the `useEditorState` composable:
 
 ```vue
 <!-- MyToolbar.vue -->
@@ -84,14 +84,14 @@ For a toolbar that reflects the current formatting at the cursor, create a compo
     <button
       :class="{ active: states.get('bold') }"
       :aria-pressed="states.get('bold') ?? false"
-      @mousedown.prevent="api?.toggleMark('bold')"
+      @mousedown.prevent="editor?.toggleMark('bold')"
     >
       Bold
     </button>
     <button
       :class="{ active: states.get('italic') }"
       :aria-pressed="states.get('italic') ?? false"
-      @mousedown.prevent="api?.toggleMark('italic')"
+      @mousedown.prevent="editor?.toggleMark('italic')"
     >
       Italic
     </button>
@@ -99,30 +99,33 @@ For a toolbar that reflects the current formatting at the cursor, create a compo
 </template>
 
 <script setup lang="ts">
-import { inject } from 'vue'
-import { EDDY_INJECTION_KEY, useEditorState } from 'eddy-editor'
+import { toRef } from 'vue'
+import { useEditorState, type EditorAPI, type EddyPlugin } from 'eddy-editor'
 
-const provision = inject(EDDY_INJECTION_KEY)!
-const { api } = provision
+const props = defineProps<{
+  editor: EditorAPI | null
+  plugins: EddyPlugin[]
+  disabled: boolean
+}>()
 
 // Reactive Map<string, boolean> — updates on every selectionchange and input event
-const states = useEditorState(api, provision.plugins)
+const states = useEditorState(toRef(props, 'editor'), props.plugins)
 </script>
 ```
 
-Place your component inside the `#toolbar` slot so it has access to the injected context:
+Pass the slot props through to your component:
 
 ```vue
 <eddy-editor v-model="content">
-  <template #toolbar>
-    <my-toolbar />
+  <template #toolbar="{ editor, plugins, disabled }">
+    <my-toolbar :editor="editor" :plugins="plugins" :disabled="disabled" />
   </template>
 </eddy-editor>
 ```
 
 `useEditorState` returns a reactive `Ref<Map<string, boolean>>` keyed by plugin name. It listens to `selectionchange` and `input` events, so your toolbar buttons stay in sync as the user moves the cursor between formatted and plain text.
 
-`provision.plugins` gives you the full merged plugin list (built-ins + any consumer plugins), so you can also iterate over plugins dynamically instead of hardcoding each button.
+The `plugins` prop gives you the full merged plugin list (built-ins + any consumer plugins), so you can also iterate over plugins dynamically instead of hardcoding each button.
 
 ## Keyboard shortcuts
 
@@ -169,8 +172,8 @@ Pass plugins via the `plugins` prop. Any plugin whose `name` matches a built-in 
 
 ```vue
 <eddy-editor v-model="content" :plugins="[codePlugin]">
-  <template #toolbar>
-    <eddy-toolbar />
+  <template #toolbar="{ editor, plugins, disabled }">
+    <eddy-toolbar :editor="editor" :plugins="plugins" :disabled="disabled" />
   </template>
 </eddy-editor>
 ```
@@ -285,14 +288,19 @@ The full set of AST node types (`DocumentNode`, `BlockNode`, `InlineNode`, `Text
 |---|---|---|---|
 | `modelValue` | `string` | -- | HTML content (use with `v-model`) |
 | `plugins` | `EddyPlugin[]` | `[]` | Additional or replacement plugins |
+| `disabled` | `boolean` | `false` | Disables editing and toolbar controls |
 
 | Slot | Slot props | Description |
 |---|---|---|
-| `toolbar` | `{ editor: EditorAPI \| null }` | Rendered above the editing area |
+| `toolbar` | `{ editor: EditorAPI \| null, plugins: EddyPlugin[], disabled: boolean }` | Rendered above the editing area |
 
 ### `<eddy-toolbar>`
 
-No props. Must be placed inside the `#toolbar` slot of `<eddy-editor>` -- it uses Vue's `inject` to receive the editor context.
+| Prop | Type | Description |
+|---|---|---|
+| `editor` | `EditorAPI \| null` | The editor API instance (from slot prop) |
+| `plugins` | `EddyPlugin[]` | Merged plugin list (from slot prop) |
+| `disabled` | `boolean` | Whether controls are disabled (from slot prop) |
 
 ### `EddyPlugin`
 
@@ -310,13 +318,9 @@ interface EddyPlugin {
 
 Type-safe factory for authoring plugins. Returns the config unchanged; the value is in TypeScript inference.
 
-### `EDDY_INJECTION_KEY`
-
-Vue injection key (`InjectionKey<EddyProvision>`) used by `<eddy-editor>` to provide editor context to descendant components. Call `inject(EDDY_INJECTION_KEY)` inside any component placed in the `#toolbar` slot to access the `EditorAPI` ref and plugin list.
-
 ### `useEditorState(api, plugins)`
 
-Composable that returns a reactive `Ref<Map<string, boolean>>` of plugin active states. Listens to `selectionchange` and `input` events so toolbar buttons stay in sync with the cursor position. Must be called inside a component's `setup` (requires lifecycle hooks).
+Composable that returns a reactive `Ref<Map<string, boolean>>` of plugin active states. The `api` argument should be a `Ref<EditorAPI | null>` — use `toRef(props, 'editor')` to create one from a prop. Listens to `selectionchange` and `input` events so toolbar buttons stay in sync with the cursor position. Must be called inside a component's `setup` (requires lifecycle hooks).
 
 ## License
 
