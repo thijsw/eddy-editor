@@ -3,10 +3,6 @@ import type { ASTPosition, ASTSelection } from './selection'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function getBlockElements(el: HTMLElement): Element[] {
-  return Array.from(el.children)
-}
-
 /**
  * For a block element, returns its inline DOM children as an array of nodes
  * (Text and <br> elements).
@@ -62,7 +58,7 @@ export function domPositionToAST(
   if (!el.contains(textNode)) return null
 
   // Find which top-level block element contains this node
-  const blockEls = getBlockElements(el)
+  const blockEls = Array.from(el.children)
   for (let blockIndex = 0; blockIndex < blockEls.length; blockIndex++) {
     const blockEl = blockEls[blockIndex]
     if (!blockEl.contains(textNode) && blockEl !== textNode) continue

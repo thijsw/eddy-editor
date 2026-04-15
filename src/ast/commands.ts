@@ -23,11 +23,6 @@ export interface CommandResult {
 // ── Position remapping ────────────────────────────────────────────────────────
 
 /**
- * Converts an inline position (inlineIndex + offset) to a flat character
- * offset within an inlines array, then resolves it back to (inlineIndex, offset)
- * in a new inlines array. Text content is the same, only node boundaries differ.
- */
-/**
  * Remaps every position in a selection from oldDoc's inline structure
  * to newDoc's inline structure. Used after transforms that change node
  * boundaries (mark splits, schema merges) but preserve text content.
@@ -99,6 +94,10 @@ function remapPosition(
 
 function emptyParagraph(): ParagraphNode {
   return { type: 'paragraph', children: [{ type: 'text', text: '', marks: [] }] }
+}
+
+function cursorAtBlock(blockIndex: number): ASTSelection {
+  return collapsedAt({ blockIndex, itemIndex: 0, inlineIndex: 0, offset: 0 })
 }
 
 /**
@@ -445,30 +444,16 @@ export function insertParagraph(
   const inlines = block.children
 
   if (atStart && !atEnd) {
-    // Insert empty paragraph BEFORE current block; cursor goes into the new paragraph.
-    // This matches browser behaviour where Enter at position 0 of a heading
-    // inserts blank line above and leaves heading content below.
+    // Insert empty paragraph BEFORE current block; cursor stays in the
+    // original block (which shifted to blockIndex + 1).
     children.splice(pos.blockIndex, 0, emptyParagraph())
-
-    const newSel = collapsedAt({
-      blockIndex: pos.blockIndex + 1,
-      itemIndex: 0,
-      inlineIndex: 0,
-      offset: 0,
-    })
-    return { doc: { type: 'document', children }, selection: newSel }
+    return { doc: { type: 'document', children }, selection: cursorAtBlock(pos.blockIndex + 1) }
   }
 
   if (atEnd) {
     // Insert empty paragraph AFTER current block; cursor goes to it
     children.splice(pos.blockIndex + 1, 0, emptyParagraph())
-    const newSel = collapsedAt({
-      blockIndex: pos.blockIndex + 1,
-      itemIndex: 0,
-      inlineIndex: 0,
-      offset: 0,
-    })
-    return { doc: { type: 'document', children }, selection: newSel }
+    return { doc: { type: 'document', children }, selection: cursorAtBlock(pos.blockIndex + 1) }
   }
 
   // Middle of block: split the inline content at cursor position
@@ -485,14 +470,7 @@ export function insertParagraph(
 
   children.splice(pos.blockIndex, 1, firstBlock, secondBlock)
 
-  const newSel = collapsedAt({
-    blockIndex: pos.blockIndex + 1,
-    itemIndex: 0,
-    inlineIndex: 0,
-    offset: 0,
-  })
-
-  return { doc: { type: 'document', children }, selection: newSel }
+  return { doc: { type: 'document', children }, selection: cursorAtBlock(pos.blockIndex + 1) }
 }
 
 function splitListItem(doc: DocumentNode, sel: ASTSelection): CommandResult {
@@ -552,7 +530,7 @@ function splitListItem(doc: DocumentNode, sel: ASTSelection): CommandResult {
 
     return {
       doc: { type: 'document', children },
-      selection: collapsedAt({ blockIndex: newBlockIndex, itemIndex: 0, inlineIndex: 0, offset: 0 }),
+      selection: cursorAtBlock(newBlockIndex),
     }
   }
 

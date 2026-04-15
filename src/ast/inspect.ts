@@ -1,6 +1,6 @@
 import type { DocumentNode, InlineNode, MarkType, TextNode } from './types'
 import type { ASTSelection } from './selection'
-import { compareInlineToPosition, normalizeSelection } from './selection'
+import { compareInlineToPosition, normalizeSelection, positionsEqual } from './selection'
 
 // ── Mark inspection ───────────────────────────────────────────────────────────
 
@@ -20,13 +20,8 @@ export function isMarkActive(
   mark: MarkType,
 ): boolean {
   const [start, end] = normalizeSelection(sel)
-  const isCollapsed =
-    start.blockIndex === end.blockIndex &&
-    start.itemIndex === end.itemIndex &&
-    start.inlineIndex === end.inlineIndex &&
-    start.offset === end.offset
 
-  if (isCollapsed) {
+  if (positionsEqual(start, end)) {
     const block = doc.children[start.blockIndex]
     if (block) {
       const inlines = block.type === 'list'
