@@ -5,7 +5,7 @@
       eddy-toolbar uses inject() which requires it to be a descendant in the
       Vue component tree — this slot satisfies that requirement.
     -->
-    <slot name="toolbar" :editor="api" />
+    <slot name="toolbar" :editor="api" :plugins="mergedPlugins" :disabled="disabled" />
 
     <div
       ref="editorEl"
@@ -21,11 +21,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, provide, onMounted } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { EditorAPIImpl } from '../editor-api'
 import { matchesKeybinding } from '../matches-keybinding'
 import { defaultPlugins } from '../plugins/index'
-import { EDDY_INJECTION_KEY, type EditorAPI, type EddyPlugin } from '../types'
+import type { EditorAPI, EddyPlugin } from '../types'
 import { parseHTML } from '../ast/parse'
 import { serializeToHTML } from '../ast/serialize'
 
@@ -60,20 +60,6 @@ const mergedPlugins = computed((): EddyPlugin[] => {
   const consumerNames = new Set(props.plugins.map((p) => p.name))
   const builtins = defaultPlugins.filter((p) => !consumerNames.has(p.name))
   return [...builtins, ...props.plugins]
-})
-
-// ── Provide context to eddy-toolbar ──────────────────────────────────────────
-
-// The getter ensures the toolbar always sees the latest plugin list even when
-// props.plugins changes after setup.
-provide(EDDY_INJECTION_KEY, {
-  api,
-  get plugins() {
-    return mergedPlugins.value
-  },
-  get disabled() {
-    return props.disabled
-  },
 })
 
 // ── Lifecycle ─────────────────────────────────────────────────────────────────

@@ -7,7 +7,7 @@
       class="custom-toolbar-btn"
       :class="{ 'is-active': activeStates.get(btn.name) }"
       :title="btn.title"
-      :disabled="provision.disabled"
+      :disabled="disabled"
       @mousedown.prevent="btn.action()"
     >
       <component :is="btn.icon" :size="16" />
@@ -16,8 +16,8 @@
 </template>
 
 <script setup lang="ts">
-import { inject, type Component } from 'vue'
-import { EDDY_INJECTION_KEY, useEditorState } from 'eddy-editor'
+import { toRef, type Component } from 'vue'
+import { useEditorState, type EditorAPI, type EddyPlugin } from 'eddy-editor'
 import {
   Bold,
   Italic,
@@ -33,12 +33,13 @@ import {
   ListOrdered,
 } from '@lucide/vue'
 
-const provision = inject(EDDY_INJECTION_KEY)
-if (!provision) {
-  throw new Error('<custom-toolbar> must be placed inside the #toolbar slot of <eddy-editor>.')
-}
+const props = defineProps<{
+  editor: EditorAPI | null
+  plugins: EddyPlugin[]
+  disabled: boolean
+}>()
 
-const { api } = provision
+const editorRef = toRef(props, 'editor')
 
 interface ToolbarButton {
   name: string
@@ -49,7 +50,7 @@ interface ToolbarButton {
 
 function markButton(name: string, icon: Component, title: string): ToolbarButton {
   const type = name as 'bold' | 'italic' | 'underline' | 'strikethrough'
-  return { name, icon, title, action: () => api.value?.toggleMark(type) }
+  return { name, icon, title, action: () => props.editor?.toggleMark(type) }
 }
 
 function headingButton(level: 1 | 2 | 3 | 4 | 5 | 6, icon: Component): ToolbarButton {
@@ -57,12 +58,12 @@ function headingButton(level: 1 | 2 | 3 | 4 | 5 | 6, icon: Component): ToolbarBu
     name: `heading${level}`,
     icon,
     title: `Heading ${level}`,
-    action: () => api.value?.setBlockType('heading', { level }),
+    action: () => props.editor?.setBlockType('heading', { level }),
   }
 }
 
 function listButton(name: string, icon: Component, title: string, ordered: boolean): ToolbarButton {
-  return { name, icon, title, action: () => api.value?.toggleList(ordered) }
+  return { name, icon, title, action: () => props.editor?.toggleList(ordered) }
 }
 
 const buttons: ToolbarButton[] = [
@@ -80,7 +81,7 @@ const buttons: ToolbarButton[] = [
   listButton('orderedList', ListOrdered, 'Numbered list', true),
 ]
 
-const activeStates = useEditorState(api, provision.plugins)
+const activeStates = useEditorState(editorRef, props.plugins)
 </script>
 
 <style scoped>

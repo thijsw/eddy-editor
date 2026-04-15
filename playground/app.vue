@@ -8,8 +8,8 @@
       <section class="demo-section">
         <h2 class="section-title">Editor</h2>
         <eddy-editor v-model="content" :disabled="isDisabled">
-          <template #toolbar>
-            <eddy-toolbar />
+          <template #toolbar="{ editor, plugins, disabled }">
+            <eddy-toolbar :editor="editor" :plugins="plugins" :disabled="disabled" />
           </template>
         </eddy-editor>
         <label class="disabled-toggle">

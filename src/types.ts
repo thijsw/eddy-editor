@@ -1,4 +1,4 @@
-import type { Component, InjectionKey, Ref } from 'vue'
+import type { Component } from 'vue'
 import type { DocumentNode, MarkType } from './ast/types'
 import type { ASTSelection } from './ast/selection'
 
@@ -45,13 +45,3 @@ export interface EddyPlugin {
   isActive?(api: EditorAPI): boolean
 }
 
-export interface EddyProvision {
-  /** The EditorAPI ref — may be null before mount */
-  api: Ref<EditorAPI | null>
-  /** Live list of all registered plugins (built-ins + consumer plugins) */
-  readonly plugins: EddyPlugin[]
-  /** Whether the editor is disabled */
-  readonly disabled: boolean
-}
-
-export const EDDY_INJECTION_KEY: InjectionKey<EddyProvision> = Symbol('eddy')

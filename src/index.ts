@@ -16,11 +16,10 @@ export { unorderedList } from './plugins/unordered-list'
 export { orderedList } from './plugins/ordered-list'
 
 // Custom toolbar support
-export { EDDY_INJECTION_KEY } from './types'
 export { useEditorState } from './use-editor-state'
 
 // Types
-export type { EditorAPI, EddyPlugin, ToolbarConfig, EddyProvision } from './types'
+export type { EditorAPI, EddyPlugin, ToolbarConfig } from './types'
 export type { MarkType, DocumentNode, BlockNode, InlineNode, TextNode, HardBreakNode, ParagraphNode, HeadingNode, ListNode, ListItemNode, Mark } from './ast/types'
 export type { ASTPosition, ASTSelection } from './ast/selection'
 

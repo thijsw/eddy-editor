@@ -5,7 +5,7 @@
       <h1>Custom Toolbar Example</h1>
       <p class="playground-description">
         This example demonstrates how to build a custom toolbar using the
-        <code>EDDY_INJECTION_KEY</code> and <code>EditorAPI</code> exports.
+        <code>EditorAPI</code> slot props.
         All formatting options are rendered as individual buttons.
       </p>
     </header>
@@ -14,8 +14,8 @@
       <section class="demo-section">
         <h2 class="section-title">Editor</h2>
         <eddy-editor v-model="content">
-          <template #toolbar>
-            <custom-toolbar />
+          <template #toolbar="{ editor, plugins, disabled }">
+            <custom-toolbar :editor="editor" :plugins="plugins" :disabled="disabled" />
           </template>
         </eddy-editor>
       </section>

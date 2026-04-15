@@ -3,7 +3,7 @@
     <select
       class="eddy-toolbar-select"
       :value="currentBlockType"
-      :disabled="provision.disabled"
+      :disabled="disabled"
       @change="onBlockTypeChange"
     >
       <option value="paragraph">Normal</option>
@@ -19,8 +19,8 @@
       :title="plugin.toolbar!.title"
       :aria-label="plugin.toolbar!.title"
       :aria-pressed="activeStates.get(plugin.name) ?? false"
-      :disabled="provision.disabled"
-      @mousedown.prevent="plugin.command(api!)"
+      :disabled="disabled"
+      @mousedown.prevent="plugin.command(editor!)"
     >
       <component :is="resolveIcon(plugin)" v-if="resolveIcon(plugin)" :size="16" />
       <span v-else>{{ plugin.toolbar!.label }}</span>
@@ -29,8 +29,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, inject, type Component } from 'vue'
-import { EDDY_INJECTION_KEY, type EddyPlugin } from '../types'
+import { computed, toRef, type Component } from 'vue'
+import type { EditorAPI, EddyPlugin } from '../types'
 import { useEditorState } from '../use-editor-state'
 import {
   Bold,
@@ -41,20 +41,19 @@ import {
   ListOrdered,
 } from '@lucide/vue'
 
-const provision = inject(EDDY_INJECTION_KEY)
-if (!provision) {
-  throw new Error(
-    '[eddy] <eddy-toolbar> must be placed inside the #toolbar slot of <eddy-editor>.',
-  )
-}
+const props = defineProps<{
+  editor: EditorAPI | null
+  plugins: EddyPlugin[]
+  disabled: boolean
+}>()
 
-const { api } = provision
+const editorRef = toRef(props, 'editor')
 
 const nonHeadingPlugins = computed(() =>
-  provision.plugins.filter((p) => p.toolbar != null && !p.name.startsWith('heading')),
+  props.plugins.filter((p) => p.toolbar != null && !p.name.startsWith('heading')),
 )
 
-const activeStates = useEditorState(api, provision.plugins)
+const activeStates = useEditorState(editorRef, props.plugins)
 
 const currentBlockType = computed(() => {
   for (let n = 1; n <= 6; n++) {
@@ -78,15 +77,14 @@ function resolveIcon(plugin: EddyPlugin): Component | undefined {
 }
 
 function onBlockTypeChange(event: Event): void {
-  const a = api.value
-  if (!a) return
+  if (!props.editor) return
   const value = (event.target as HTMLSelectElement).value
   if (value === 'paragraph') {
-    a.setBlockType('paragraph')
+    props.editor.setBlockType('paragraph')
   } else {
     const level = parseInt(value.replace('h', '')) as 1 | 2 | 3 | 4 | 5 | 6
-    a.setBlockType('heading', { level })
+    props.editor.setBlockType('heading', { level })
   }
-  a.el?.focus()
+  props.editor.el?.focus()
 }
 </script>
