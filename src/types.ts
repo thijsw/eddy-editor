@@ -50,6 +50,8 @@ export interface EddyProvision {
   api: Ref<EditorAPI | null>
   /** Live list of all registered plugins (built-ins + consumer plugins) */
   readonly plugins: EddyPlugin[]
+  /** Whether the editor is disabled */
+  readonly disabled: boolean
 }
 
 export const EDDY_INJECTION_KEY: InjectionKey<EddyProvision> = Symbol('eddy')

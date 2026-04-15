@@ -9,6 +9,7 @@
       :title="plugin.toolbar!.title"
       :aria-label="plugin.toolbar!.title"
       :aria-pressed="activeStates.get(plugin.name) ?? false"
+      :disabled="provision.disabled"
       @mousedown.prevent="plugin.command(api!)"
     >
       <component :is="resolveIcon(plugin)" v-if="resolveIcon(plugin)" :size="16" />

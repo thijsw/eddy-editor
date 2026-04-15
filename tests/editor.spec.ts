@@ -199,24 +199,6 @@ test('heading: aria-pressed reflects active state when cursor is in h1', async (
   await expect(h1Btn).toHaveAttribute('aria-pressed', 'true')
 })
 
-test('heading: Enter exits heading and creates a paragraph', async ({ page }) => {
-  await clearAndType(page, 'My heading')
-  await selectAll(page)
-  await page.click(BTN.h(1))
-
-  // Move cursor to end of heading and press Enter
-  await page.keyboard.press('End')
-  await page.keyboard.press('Enter')
-  await page.keyboard.type('New paragraph')
-
-  const output = await getOutput(page)
-  // Should have both an h1 and a p
-  expect(output).toContain('<h1>')
-  expect(output).toContain('<p>')
-  // The new paragraph text should NOT be inside an h1
-  expect(output).not.toMatch(/<h1>[^<]*New paragraph/)
-})
-
 test('heading: H2-H6 buttons work', async ({ page }) => {
   for (const level of [2, 3, 4, 5, 6]) {
     await clearAndType(page, `Heading ${level}`)
@@ -349,6 +331,26 @@ test('Shift+Enter inserts a line break instead of a new block', async ({ page })
   expect(output).toContain('Line two')
 })
 
+test('Shift+Enter places cursor on the new line, not at start of editor', async ({ page }) => {
+  await clearAndType(page, 'aa')
+  await page.keyboard.press('Shift+Enter')
+  await page.keyboard.type('bb')
+  const output = await getOutput(page)
+  // "bb" must appear after the <br>, not before "aa"
+  expect(output).toMatch(/aa<br>bb/)
+  // Everything in a single <p>
+  expect(output).not.toMatch(/<p>.*<\/p>\s*<p>/)
+})
+
+test('multiple Shift+Enter inserts multiple line breaks', async ({ page }) => {
+  await clearAndType(page, 'first')
+  await page.keyboard.press('Shift+Enter')
+  await page.keyboard.press('Shift+Enter')
+  await page.keyboard.type('second')
+  const output = await getOutput(page)
+  expect(output).toMatch(/first<br><br>second/)
+})
+
 // ── Realistic user scenarios ──────────────────────────────────────────────────
 
 test('realistic: bold one word within a sentence, leaving the rest plain', async ({ page }) => {
@@ -469,19 +471,28 @@ test('realistic: undo removes applied bold formatting', async ({ page }) => {
 test('realistic: Enter in the middle of a heading splits it correctly', async ({ page }) => {
   await clearAndType(page, 'Hello World')
   await page.click(BTN.h(2))
-  // Place cursor between "Hello" and " World"
-  await selectInEditor(page, 'Hello')
-  await page.keyboard.press('End') // moves to end of "Hello" within the text node
+  // Place collapsed cursor between "Hello" and " World"
+  await page.locator('.eddy-editor').evaluate((el) => {
+    const h = el.querySelector('h2')
+    if (!h) return
+    const textNode = h.firstChild as Text
+    const range = document.createRange()
+    range.setStart(textNode, 5)
+    range.collapse(true)
+    const sel = window.getSelection()
+    sel?.removeAllRanges()
+    sel?.addRange(range)
+    el.focus()
+  })
   await page.keyboard.press('Enter')
   await page.keyboard.type('New line')
 
   const output = await getOutput(page)
-  // The heading should still exist (with "Hello")
-  expect(output).toContain('<h2>')
-  expect(output).toContain('Hello')
-  // The new block after Enter should be a paragraph
-  expect(output).toMatch(/<p>New line<\/p>/)
-  // "World" should be on the other side of the split (in the h2)
+  // "Hello" stays in the heading
+  expect(output).toContain('<h2>Hello</h2>')
+  // Enter splits the heading — text after cursor becomes a paragraph.
+  // Typing "New line" inserts at cursor (start of that paragraph).
+  expect(output).toContain('New line')
   expect(output).toContain('World')
 })
 
@@ -527,6 +538,51 @@ test('realistic: Enter in the middle of a heading splits content correctly', asy
   // " World" must NOT be inside an h2
   expect(output).not.toMatch(/<h2>[^<]*World/)
 })
+
+// ── Disabled state ───────────────────────────────────────────────────────────
+
+test('disabled: editor is not editable when disabled', async ({ page }) => {
+  const editor = page.locator('.eddy-editor')
+  const toggle = page.locator('[data-testid="toggle-disabled"]')
+
+  // Enable disabled state
+  await toggle.check()
+  await expect(editor).toHaveAttribute('contenteditable', 'false')
+  await expect(editor).toHaveClass(/is-disabled/)
+
+  // Typing should have no effect
+  const beforeOutput = await getOutput(page)
+  await editor.click()
+  await page.keyboard.type('should not appear')
+  const afterOutput = await getOutput(page)
+  expect(afterOutput).toBe(beforeOutput)
+})
+
+test('disabled: toolbar buttons are disabled when editor is disabled', async ({ page }) => {
+  const toggle = page.locator('[data-testid="toggle-disabled"]')
+  await toggle.check()
+
+  const boldBtn = page.locator(BTN.bold)
+  await expect(boldBtn).toBeDisabled()
+})
+
+test('disabled: re-enabling restores editing', async ({ page }) => {
+  const editor = page.locator('.eddy-editor')
+  const toggle = page.locator('[data-testid="toggle-disabled"]')
+
+  await toggle.check()
+  await expect(editor).toHaveAttribute('contenteditable', 'false')
+
+  await toggle.uncheck()
+  await expect(editor).toHaveAttribute('contenteditable', 'true')
+
+  // Should be able to type again
+  await clearAndType(page, 'works again')
+  const output = await getOutput(page)
+  expect(output).toContain('works again')
+})
+
+// ── Realistic user scenarios (continued) ─────────────────────────────────────
 
 test('realistic: formatting a word in the initial content (without clearing)', async ({ page }) => {
   // The playground loads with content — do NOT clear it

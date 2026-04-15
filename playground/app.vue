@@ -7,11 +7,15 @@
     <main class="playground-main">
       <section class="demo-section">
         <h2 class="section-title">Editor</h2>
-        <eddy-editor v-model="content">
+        <eddy-editor v-model="content" :disabled="isDisabled">
           <template #toolbar>
             <eddy-toolbar />
           </template>
         </eddy-editor>
+        <label class="disabled-toggle">
+          <input type="checkbox" v-model="isDisabled" data-testid="toggle-disabled" />
+          Disabled
+        </label>
       </section>
 
       <html-panel :html="content" />
@@ -27,6 +31,7 @@ import HtmlPanel from './html-panel.vue'
 import AstPanel from './ast-panel.vue'
 
 const content = ref('<p>Welcome to the <strong>Eddy</strong> editor playground. Try formatting this text!</p>')
+const isDisabled = ref(false)
 </script>
 
 <style scoped>

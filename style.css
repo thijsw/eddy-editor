@@ -79,6 +79,17 @@
   box-shadow: inset 0 0 0 2px var(--eddy-focus-ring-color);
 }
 
+.eddy-editor.is-disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.eddy-toolbar-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+  pointer-events: none;
+}
+
 /* Sensible content styles */
 .eddy-editor h1,
 .eddy-editor h2,

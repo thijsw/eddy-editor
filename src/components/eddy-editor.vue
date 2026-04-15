@@ -10,6 +10,7 @@
     <div
       ref="editorEl"
       class="eddy-editor"
+      :class="{ 'is-disabled': disabled }"
       contenteditable="true"
       @input="onInput"
       @keydown="onKeydown"
@@ -33,10 +34,12 @@ import { serializeToHTML } from '../ast/serialize'
 interface Props {
   modelValue: string
   plugins?: EddyPlugin[]
+  disabled?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
   plugins: () => [],
+  disabled: false,
 })
 
 const emit = defineEmits<{
@@ -68,6 +71,9 @@ provide(EDDY_INJECTION_KEY, {
   get plugins() {
     return mergedPlugins.value
   },
+  get disabled() {
+    return props.disabled
+  },
 })
 
 // ── Lifecycle ─────────────────────────────────────────────────────────────────
@@ -90,11 +96,28 @@ onMounted(() => {
     emit('update:modelValue', internalValue)
   })
 
+  if (props.disabled) {
+    editorEl.value.contentEditable = 'false'
+  }
+
   impl = apiImpl
   api.value = apiImpl
   internalValue = props.modelValue
 
 })
+
+// ── Disabled state ───────────────────────────────────────────────────────────
+
+// Set contenteditable imperatively to avoid Vue patching the attribute on
+// every re-render, which can reset the browser selection inside contenteditable.
+watch(
+  () => props.disabled,
+  (isDisabled) => {
+    if (editorEl.value) {
+      editorEl.value.contentEditable = isDisabled ? 'false' : 'true'
+    }
+  },
+)
 
 // ── Model sync ────────────────────────────────────────────────────────────────
 
@@ -157,8 +180,9 @@ function onKeydown(event: KeyboardEvent): void {
     return
   }
   if (event.key === 'Enter' && event.shiftKey) {
-    event.preventDefault()
-    impl.insertHardBreak()
+    // Let the browser handle Shift+Enter natively — it inserts <br> and
+    // positions the cursor correctly.  The onInput handler syncs to AST.
+    impl.pushHistory()
     return
   }
 

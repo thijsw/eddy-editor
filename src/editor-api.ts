@@ -149,6 +149,16 @@ export class EditorAPIImpl implements EditorAPI {
     this._notifyChange()
   }
 
+  /**
+   * Snapshots the current document state for undo.
+   * Called before letting the browser handle an action natively (e.g. Shift+Enter)
+   * so that undo can restore the pre-action state.
+   */
+  pushHistory(): void {
+    this._readSelectionFromDOM()
+    this._pushHistoryNow()
+  }
+
   // ── State inspection ──────────────────────────────────────────────────────
 
   isMarkActive(mark: MarkType): boolean {
