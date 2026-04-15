@@ -5,7 +5,7 @@
       :key="btn.name"
       type="button"
       class="custom-toolbar-btn"
-      :class="{ 'is-active': activeStates[btn.name] }"
+      :class="{ 'is-active': activeStates.get(btn.name) }"
       :title="btn.title"
       :disabled="provision.disabled"
       @mousedown.prevent="btn.action()"
@@ -16,8 +16,8 @@
 </template>
 
 <script setup lang="ts">
-import { inject, ref, onMounted, onBeforeUnmount, type Component } from 'vue'
-import { EDDY_INJECTION_KEY, type EditorAPI } from 'eddy-editor'
+import { inject, type Component } from 'vue'
+import { EDDY_INJECTION_KEY, useEditorState } from 'eddy-editor'
 import {
   Bold,
   Italic,
@@ -45,18 +45,11 @@ interface ToolbarButton {
   icon: Component
   title: string
   action: () => void
-  isActive: (api: EditorAPI) => boolean
 }
 
 function markButton(name: string, icon: Component, title: string): ToolbarButton {
   const type = name as 'bold' | 'italic' | 'underline' | 'strikethrough'
-  return {
-    name,
-    icon,
-    title,
-    action: () => api.value?.toggleMark(type),
-    isActive: (a) => a.isMarkActive(type),
-  }
+  return { name, icon, title, action: () => api.value?.toggleMark(type) }
 }
 
 function headingButton(level: 1 | 2 | 3 | 4 | 5 | 6, icon: Component): ToolbarButton {
@@ -65,18 +58,11 @@ function headingButton(level: 1 | 2 | 3 | 4 | 5 | 6, icon: Component): ToolbarBu
     icon,
     title: `Heading ${level}`,
     action: () => api.value?.setBlockType('heading', { level }),
-    isActive: (a) => a.getHeadingLevel() === level,
   }
 }
 
 function listButton(name: string, icon: Component, title: string, ordered: boolean): ToolbarButton {
-  return {
-    name,
-    icon,
-    title,
-    action: () => api.value?.toggleList(ordered),
-    isActive: (a) => a.getListType() === (ordered ? 'ordered' : 'unordered'),
-  }
+  return { name, icon, title, action: () => api.value?.toggleList(ordered) }
 }
 
 const buttons: ToolbarButton[] = [
@@ -94,26 +80,7 @@ const buttons: ToolbarButton[] = [
   listButton('orderedList', ListOrdered, 'Numbered list', true),
 ]
 
-const activeStates = ref<Record<string, boolean>>({})
-
-function refresh(): void {
-  const a = api.value
-  if (!a) return
-  for (const btn of buttons) {
-    activeStates.value[btn.name] = btn.isActive(a)
-  }
-}
-
-onMounted(() => {
-  document.addEventListener('selectionchange', refresh)
-  api.value?.el?.addEventListener('input', refresh)
-  refresh()
-})
-
-onBeforeUnmount(() => {
-  document.removeEventListener('selectionchange', refresh)
-  api.value?.el?.removeEventListener('input', refresh)
-})
+const activeStates = useEditorState(api, provision.plugins)
 </script>
 
 <style scoped>
