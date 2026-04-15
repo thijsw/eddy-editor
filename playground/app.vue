@@ -14,10 +14,8 @@
         </eddy-editor>
       </section>
 
-      <section class="demo-section">
-        <h2 class="section-title">HTML output <span class="hint">(v-model value)</span></h2>
-        <pre class="html-output">{{ content }}</pre>
-      </section>
+      <html-panel :html="content" />
+      <ast-panel :html="content" />
     </main>
   </div>
 </template>
@@ -25,6 +23,8 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { EddyEditor, EddyToolbar } from 'eddy-editor'
+import HtmlPanel from './html-panel.vue'
+import AstPanel from './ast-panel.vue'
 
 const content = ref('<p>Welcome to the <strong>Eddy</strong> editor playground. Try formatting this text!</p>')
 </script>
@@ -65,25 +65,5 @@ const content = ref('<p>Welcome to the <strong>Eddy</strong> editor playground. 
   letter-spacing: 0.05em;
   color: #6b7280;
   margin: 0;
-}
-
-.hint {
-  font-weight: 400;
-  text-transform: none;
-  letter-spacing: 0;
-}
-
-.html-output {
-  background: #1e1e2e;
-  color: #cdd6f4;
-  padding: 1rem;
-  border-radius: 0.375rem;
-  font-family: ui-monospace, 'Cascadia Code', 'Source Code Pro', monospace;
-  font-size: 0.8125rem;
-  line-height: 1.6;
-  white-space: pre-wrap;
-  word-break: break-all;
-  margin: 0;
-  min-height: 3rem;
 }
 </style>
