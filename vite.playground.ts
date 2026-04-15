@@ -14,4 +14,12 @@ export default defineConfig({
     },
   },
   plugins: [vue()],
+  build: {
+    rollupOptions: {
+      input: {
+        main: resolve(__dirname, 'playground/index.html'),
+        'custom-toolbar': resolve(__dirname, 'playground/custom-toolbar.html'),
+      },
+    },
+  },
 })
