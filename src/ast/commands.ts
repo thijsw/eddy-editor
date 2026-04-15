@@ -441,7 +441,7 @@ export function insertParagraph(
   const children = [...doc.children]
   const inlines = block.children
 
-  if (atStart) {
+  if (atStart && !atEnd) {
     // Insert empty paragraph BEFORE current block; cursor goes into the new paragraph.
     // This matches browser behaviour where Enter at position 0 of a heading
     // inserts blank line above and leaves heading content below.

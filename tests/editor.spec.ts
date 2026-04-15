@@ -398,6 +398,19 @@ test('realistic: build a document — heading then multiple paragraphs via Enter
   expect(output).toMatch(/<p>Second paragraph\.<\/p>/)
 })
 
+test('realistic: pressing Enter twice creates two empty paragraphs and cursor moves down', async ({ page }) => {
+  await clearAndType(page, 'Top')
+  await page.keyboard.press('Enter')
+  await page.keyboard.press('Enter')
+  await page.keyboard.type('Bottom')
+  const output = await getOutput(page)
+  // Should have: <p>Top</p> then an empty paragraph then <p>Bottom</p>
+  expect(output).toContain('<p>Top</p>')
+  expect(output).toContain('<p>Bottom</p>')
+  // "Bottom" must not be in the same paragraph as "Top"
+  expect(output).not.toContain('TopBottom')
+})
+
 test('realistic: build a bullet list by pressing Enter between items', async ({ page }) => {
   await clearAndType(page, 'First')
   await page.click(BTN.ul)
