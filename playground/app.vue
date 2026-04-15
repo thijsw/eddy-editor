@@ -20,6 +20,11 @@
 
       <html-panel :html="content" />
       <ast-panel :html="content" />
+
+      <section class="demo-section">
+        <h2 class="section-title">Examples</h2>
+        <a href="custom-toolbar.html">Custom toolbar with all buttons</a>
+      </section>
     </main>
   </div>
 </template>

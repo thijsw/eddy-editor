@@ -4,12 +4,12 @@ import { test, expect, type Page } from '@playwright/test'
 
 /** Get the current v-model HTML from the output panel */
 async function getOutput(page: Page): Promise<string> {
-  return page.locator('pre.html-output').textContent() ?? ''
+  return page.locator('pre.html-output').first().textContent() ?? ''
 }
 
 /** Click into the editor and select all existing content */
 async function selectAll(page: Page) {
-  const editor = page.locator('.eddy-editor')
+  const editor = page.locator('.eddy-editor').first()
   await editor.click()
   await page.keyboard.press('Meta+A')
 }
@@ -26,7 +26,7 @@ async function clearAndType(page: Page, text: string) {
  * More reliable than double-click for targeting words in known text.
  */
 async function selectInEditor(page: Page, text: string) {
-  await page.locator('.eddy-editor').evaluate((el, searchText) => {
+  await page.locator('.eddy-editor').first().evaluate((el, searchText) => {
     function findText(node: Node, str: string): { node: Text; offset: number } | null {
       if (node.nodeType === Node.TEXT_NODE) {
         const idx = (node.textContent ?? '').indexOf(str)
@@ -55,7 +55,7 @@ async function selectInEditor(page: Page, text: string) {
  * which triggers selectionchange so the toolbar updates.
  */
 async function placeCursorIn(page: Page, text: string) {
-  await page.locator('.eddy-editor').evaluate((el, searchText) => {
+  await page.locator('.eddy-editor').first().evaluate((el, searchText) => {
     function findText(node: Node, str: string): { node: Text; offset: number } | null {
       if (node.nodeType === Node.TEXT_NODE) {
         const idx = (node.textContent ?? '').indexOf(str)
@@ -88,7 +88,11 @@ const BTN = {
   strikethrough: 'button[title="Strikethrough"]',
   ul: 'button[title="Bullet list"]',
   ol: 'button[title="Numbered list"]',
-  h: (n: number) => `button[title="Heading ${n}"]`,
+}
+
+/** Select a heading level (or "paragraph") from the block type dropdown */
+async function selectBlockType(page: Page, value: string) {
+  await page.locator('.eddy-toolbar-select').selectOption(value)
 }
 
 // ── Setup ─────────────────────────────────────────────────────────────────────
@@ -166,44 +170,40 @@ test('keybinding: Mod+U applies underline', async ({ page }) => {
 
 // ── Heading toggle ────────────────────────────────────────────────────────────
 
-test('heading: H1 button converts block to h1', async ({ page }) => {
+test('heading: select converts block to h1', async ({ page }) => {
   await clearAndType(page, 'My heading')
-  await selectAll(page)
-  await page.click(BTN.h(1))
+  await selectBlockType(page, 'h1')
   const output = await getOutput(page)
   expect(output).toContain('<h1>')
 })
 
-test('heading: H1 button toggles off (h1 → p)', async ({ page }) => {
+test('heading: select toggles off (h1 → p)', async ({ page }) => {
   await clearAndType(page, 'My heading')
-  await selectAll(page)
 
   // Apply h1
-  await page.click(BTN.h(1))
+  await selectBlockType(page, 'h1')
   let output = await getOutput(page)
   expect(output).toContain('<h1>')
 
   // Toggle off
-  await page.click(BTN.h(1))
+  await selectBlockType(page, 'paragraph')
   output = await getOutput(page)
   expect(output).not.toContain('<h1>')
   expect(output).toContain('<p>')
 })
 
-test('heading: aria-pressed reflects active state when cursor is in h1', async ({ page }) => {
-  const h1Btn = page.locator(BTN.h(1))
+test('heading: select reflects active state when cursor is in h1', async ({ page }) => {
   await clearAndType(page, 'My heading')
-  await selectAll(page)
-  await h1Btn.click()
-  // After applying, cursor should be inside h1
-  await expect(h1Btn).toHaveAttribute('aria-pressed', 'true')
+  await selectBlockType(page, 'h1')
+  // The select should show "h1" as the current value
+  const select = page.locator('.eddy-toolbar-select')
+  await expect(select).toHaveValue('h1')
 })
 
-test('heading: H2-H6 buttons work', async ({ page }) => {
+test('heading: H2-H6 via select work', async ({ page }) => {
   for (const level of [2, 3, 4, 5, 6]) {
     await clearAndType(page, `Heading ${level}`)
-    await selectAll(page)
-    await page.click(BTN.h(level))
+    await selectBlockType(page, `h${level}`)
     const output = await getOutput(page)
     expect(output).toContain(`<h${level}>`)
   }
@@ -382,7 +382,7 @@ test('realistic: toolbar bold state tracks cursor moving between formatted and p
 
 test('realistic: build a document — heading then multiple paragraphs via Enter', async ({ page }) => {
   await clearAndType(page, 'Introduction')
-  await page.click(BTN.h(1))
+  await selectBlockType(page, 'h1')
   // Enter exits heading → new paragraph
   await page.keyboard.press('End')
   await page.keyboard.press('Enter')
@@ -443,9 +443,9 @@ test('realistic: clicking bold with no selection is a no-op', async ({ page }) =
 
 test('realistic: switch heading level directly from H1 to H2', async ({ page }) => {
   await clearAndType(page, 'Section title')
-  await page.click(BTN.h(1))
-  // Cursor is inside H1 — click H2 directly
-  await page.click(BTN.h(2))
+  await selectBlockType(page, 'h1')
+  // Cursor is inside H1 — select H2 directly
+  await selectBlockType(page, 'h2')
   const output = await getOutput(page)
   expect(output).toContain('<h2>')
   expect(output).not.toContain('<h1>')
@@ -483,7 +483,7 @@ test('realistic: undo removes applied bold formatting', async ({ page }) => {
 
 test('realistic: Enter in the middle of a heading splits it correctly', async ({ page }) => {
   await clearAndType(page, 'Hello World')
-  await page.click(BTN.h(2))
+  await selectBlockType(page, 'h2')
   // Place collapsed cursor between "Hello" and " World"
   await page.locator('.eddy-editor').evaluate((el) => {
     const h = el.querySelector('h2')
@@ -511,7 +511,7 @@ test('realistic: Enter in the middle of a heading splits it correctly', async ({
 
 test('realistic: Enter at the beginning of a heading creates an empty paragraph before it', async ({ page }) => {
   await clearAndType(page, 'Hello World')
-  await page.click(BTN.h(2))
+  await selectBlockType(page, 'h2')
   // Home key moves cursor to position 0 of the heading
   await page.keyboard.press('Home')
   await page.keyboard.press('Enter')
@@ -525,7 +525,7 @@ test('realistic: Enter at the beginning of a heading creates an empty paragraph 
 
 test('realistic: Enter in the middle of a heading splits content correctly', async ({ page }) => {
   await clearAndType(page, 'Hello World')
-  await page.click(BTN.h(2))
+  await selectBlockType(page, 'h2')
   // Place cursor between "Hello" and " World" using Selection API
   await page.locator('.eddy-editor').evaluate((el) => {
     const h = el.querySelector('h2')

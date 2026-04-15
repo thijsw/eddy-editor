@@ -1,7 +1,17 @@
 <template>
   <div class="eddy-toolbar" role="toolbar" aria-label="Text formatting">
+    <select
+      class="eddy-toolbar-select"
+      :value="currentBlockType"
+      :disabled="provision.disabled"
+      @change="onBlockTypeChange"
+    >
+      <option value="paragraph">Normal</option>
+      <option v-for="n in 6" :key="n" :value="`h${n}`">Heading {{ n }}</option>
+    </select>
+
     <button
-      v-for="plugin in toolbarPlugins"
+      v-for="plugin in nonHeadingPlugins"
       :key="plugin.name"
       type="button"
       class="eddy-toolbar-btn"
@@ -29,12 +39,6 @@ import {
   Strikethrough,
   List,
   ListOrdered,
-  Heading1,
-  Heading2,
-  Heading3,
-  Heading4,
-  Heading5,
-  Heading6,
 } from '@lucide/vue'
 
 const provision = inject(EDDY_INJECTION_KEY)
@@ -46,14 +50,20 @@ if (!provision) {
 
 const { api } = provision
 
-const toolbarPlugins = computed(() =>
-  provision.plugins.filter((p) => p.toolbar != null),
+const nonHeadingPlugins = computed(() =>
+  provision.plugins.filter((p) => p.toolbar != null && !p.name.startsWith('heading')),
 )
 
 const activeStates = useEditorState(api, provision.plugins)
 
-// Default icons for built-in plugins. Consumers can override by setting
-// toolbar.icon on their plugin — that takes priority.
+const currentBlockType = computed(() => {
+  for (let n = 1; n <= 6; n++) {
+    if (activeStates.value.get(`heading${n}`)) return `h${n}`
+  }
+  return 'paragraph'
+})
+
+// Default icons for built-in plugins.
 const defaultIcons: Record<string, Component> = {
   bold: Bold,
   italic: Italic,
@@ -61,15 +71,22 @@ const defaultIcons: Record<string, Component> = {
   strikethrough: Strikethrough,
   unorderedList: List,
   orderedList: ListOrdered,
-  heading1: Heading1,
-  heading2: Heading2,
-  heading3: Heading3,
-  heading4: Heading4,
-  heading5: Heading5,
-  heading6: Heading6,
 }
 
 function resolveIcon(plugin: EddyPlugin): Component | undefined {
   return plugin.toolbar?.icon ?? defaultIcons[plugin.name]
+}
+
+function onBlockTypeChange(event: Event): void {
+  const a = api.value
+  if (!a) return
+  const value = (event.target as HTMLSelectElement).value
+  if (value === 'paragraph') {
+    a.setBlockType('paragraph')
+  } else {
+    const level = parseInt(value.replace('h', '')) as 1 | 2 | 3 | 4 | 5 | 6
+    a.setBlockType('heading', { level })
+  }
+  a.el?.focus()
 }
 </script>

@@ -30,6 +30,23 @@
   border-bottom: var(--eddy-border);
 }
 
+.eddy-toolbar-select {
+  height: 2rem;
+  padding: 0 0.375rem;
+  border: 1px solid var(--eddy-border-color, #d1d5db);
+  border-radius: 0.25rem;
+  background: #fff;
+  font-family: var(--eddy-font-family);
+  font-size: 0.8125rem;
+  color: inherit;
+  cursor: pointer;
+}
+
+.eddy-toolbar-select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .eddy-toolbar-btn {
   display: inline-flex;
   align-items: center;
@@ -71,6 +88,7 @@
   font-family: var(--eddy-font-family);
   font-size: var(--eddy-font-size);
   line-height: var(--eddy-line-height);
+  background: #fff;
   outline: none;
   overflow-y: auto;
 }
