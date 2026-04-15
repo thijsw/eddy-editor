@@ -8,7 +8,7 @@ A lightweight WYSIWYG text editor for Vue 3. AST-based, zero runtime dependencie
 
 - **AST document model** -- content is a typed tree, not raw HTML. Schema rules enforce valid structure (e.g. lists cannot nest inside paragraphs).
 - **No `execCommand`** -- all formatting uses modern Range/Selection APIs via pure AST transforms. No deprecated browser APIs.
-- **Zero runtime dependencies** -- Vue 3 is the only peer dependency. <!-- BUNDLE_SIZE -->**37.93 kB** min / **9.20 kB** gzip<!-- /BUNDLE_SIZE -->.
+- **Zero runtime dependencies** -- Vue 3 is the only peer dependency. <!-- BUNDLE_SIZE -->**37.98 kB** min / **9.23 kB** gzip<!-- /BUNDLE_SIZE -->.
 - **v-model binding** -- two-way HTML string binding. Set content programmatically, read it reactively.
 - **Plugin system** -- every feature (bold, headings, lists) is a plugin. Add custom plugins, override built-ins, or use only what you need.
 - **Full TypeScript API** -- typed commands (`toggleMark`, `setBlockType`, `toggleList`) and state inspection (`isMarkActive`, `getBlockType`, `getHeadingLevel`).
@@ -50,21 +50,79 @@ The `v-model` value is an HTML string. On first render the editor is seeded with
 
 All built-in plugins (bold, italic, headings, lists, etc.) are included by default.
 
-## Editor without the built-in toolbar
+## Custom toolbar
 
-`<eddy-toolbar />` is optional. Use the scoped slot to build your own toolbar, or omit the slot entirely for a bare editor.
+`<eddy-toolbar />` is optional. You can build a fully custom toolbar in two ways.
+
+### Inline via scoped slot
+
+The `#toolbar` slot exposes the `EditorAPI` directly:
 
 ```vue
 <template>
   <eddy-editor v-model="content">
     <template #toolbar="{ editor }">
       <button @mousedown.prevent="editor?.toggleMark('bold')">Bold</button>
+      <button @mousedown.prevent="editor?.toggleMark('italic')">Italic</button>
     </template>
   </eddy-editor>
 </template>
 ```
 
 `@mousedown.prevent` is important -- it stops the click from blurring the editor before the command runs.
+
+This works for simple cases, but the slot prop is not reactive to selection changes -- button active states won't update as the cursor moves.
+
+### Custom toolbar component with reactive state
+
+For a toolbar that reflects the current formatting at the cursor, create a component that injects the editor context and uses the `useEditorState` composable:
+
+```vue
+<!-- MyToolbar.vue -->
+<template>
+  <div class="my-toolbar">
+    <button
+      :class="{ active: states.get('bold') }"
+      :aria-pressed="states.get('bold') ?? false"
+      @mousedown.prevent="api?.toggleMark('bold')"
+    >
+      Bold
+    </button>
+    <button
+      :class="{ active: states.get('italic') }"
+      :aria-pressed="states.get('italic') ?? false"
+      @mousedown.prevent="api?.toggleMark('italic')"
+    >
+      Italic
+    </button>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { inject } from 'vue'
+import { EDDY_INJECTION_KEY, useEditorState } from 'eddy-editor'
+
+const provision = inject(EDDY_INJECTION_KEY)!
+const { api } = provision
+
+// Reactive Map<string, boolean> — updates on every selectionchange and input event
+const states = useEditorState(api, provision.plugins)
+</script>
+```
+
+Place your component inside the `#toolbar` slot so it has access to the injected context:
+
+```vue
+<eddy-editor v-model="content">
+  <template #toolbar>
+    <my-toolbar />
+  </template>
+</eddy-editor>
+```
+
+`useEditorState` returns a reactive `Ref<Map<string, boolean>>` keyed by plugin name. It listens to `selectionchange` and `input` events, so your toolbar buttons stay in sync as the user moves the cursor between formatted and plain text.
+
+`provision.plugins` gives you the full merged plugin list (built-ins + any consumer plugins), so you can also iterate over plugins dynamically instead of hardcoding each button.
 
 ## Keyboard shortcuts
 
@@ -251,6 +309,14 @@ interface EddyPlugin {
 ### `createPlugin(config)`
 
 Type-safe factory for authoring plugins. Returns the config unchanged; the value is in TypeScript inference.
+
+### `EDDY_INJECTION_KEY`
+
+Vue injection key (`InjectionKey<EddyProvision>`) used by `<eddy-editor>` to provide editor context to descendant components. Call `inject(EDDY_INJECTION_KEY)` inside any component placed in the `#toolbar` slot to access the `EditorAPI` ref and plugin list.
+
+### `useEditorState(api, plugins)`
+
+Composable that returns a reactive `Ref<Map<string, boolean>>` of plugin active states. Listens to `selectionchange` and `input` events so toolbar buttons stay in sync with the cursor position. Must be called inside a component's `setup` (requires lifecycle hooks).
 
 ## License
 
