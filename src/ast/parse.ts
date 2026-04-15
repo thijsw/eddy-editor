@@ -111,17 +111,10 @@ function parseBlock(el: Element): BlockNode[] {
 // ── Document parsing ──────────────────────────────────────────────────────────
 
 /**
- * Parses an HTML string into a DocumentNode.
- * Uses the browser's own HTML parser (via innerHTML on a detached div).
+ * Walks child nodes of a container, grouping bare text nodes into paragraphs
+ * and delegating element nodes to parseBlock().
  */
-export function parseHTML(html: string): DocumentNode {
-  if (typeof document === 'undefined') {
-    return { type: 'document', children: [{ type: 'paragraph', children: [{ type: 'text', text: '', marks: [] }] }] }
-  }
-
-  const container = document.createElement('div')
-  container.innerHTML = html
-
+function parseChildNodes(childNodes: NodeListOf<ChildNode>): DocumentNode {
   const blocks: BlockNode[] = []
   let pendingTextNodes: Node[] = []
 
@@ -134,12 +127,11 @@ export function parseHTML(html: string): DocumentNode {
     pendingTextNodes = []
   }
 
-  for (const child of Array.from(container.childNodes)) {
+  for (const child of Array.from(childNodes)) {
     if (child.nodeType === Node.TEXT_NODE) {
       pendingTextNodes.push(child)
       continue
     }
-
     if (child.nodeType === Node.ELEMENT_NODE) {
       flushPendingText()
       blocks.push(...parseBlock(child as Element))
@@ -156,38 +148,23 @@ export function parseHTML(html: string): DocumentNode {
 }
 
 /**
+ * Parses an HTML string into a DocumentNode.
+ * Uses the browser's own HTML parser (via innerHTML on a detached div).
+ */
+export function parseHTML(html: string): DocumentNode {
+  if (typeof document === 'undefined') {
+    return { type: 'document', children: [{ type: 'paragraph', children: [{ type: 'text', text: '', marks: [] }] }] }
+  }
+
+  const container = document.createElement('div')
+  container.innerHTML = html
+  return parseChildNodes(container.childNodes)
+}
+
+/**
  * Parses the live DOM of the editor element into a DocumentNode.
- * Equivalent to parseHTML(el.innerHTML) but avoids the innerHTML serialization round-trip.
+ * Equivalent to parseHTML(el.innerHTML) but avoids the innerHTML round-trip.
  */
 export function parseLiveDOM(el: HTMLElement): DocumentNode {
-  const blocks: BlockNode[] = []
-  let pendingTextNodes: Node[] = []
-
-  function flushPendingText(): void {
-    if (pendingTextNodes.length === 0) return
-    const text = pendingTextNodes.map((n) => n.textContent ?? '').join('')
-    if (text.trim() !== '' || blocks.length === 0) {
-      blocks.push({ type: 'paragraph', children: [{ type: 'text', text, marks: [] }] })
-    }
-    pendingTextNodes = []
-  }
-
-  for (const child of Array.from(el.childNodes)) {
-    if (child.nodeType === Node.TEXT_NODE) {
-      pendingTextNodes.push(child)
-      continue
-    }
-    if (child.nodeType === Node.ELEMENT_NODE) {
-      flushPendingText()
-      blocks.push(...parseBlock(child as Element))
-    }
-  }
-
-  flushPendingText()
-
-  if (blocks.length === 0) {
-    blocks.push({ type: 'paragraph', children: [{ type: 'text', text: '', marks: [] }] })
-  }
-
-  return { type: 'document', children: blocks }
+  return parseChildNodes(el.childNodes)
 }

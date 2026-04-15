@@ -47,6 +47,9 @@ function collectInlineDOMNodes(node: Node, result: Node[]): void {
  *
  * This resolves the (elementNode, 0) vs (firstTextNode, 0) ambiguity.
  */
+// Relies on DOM block elements (el.children) being 1:1 with doc.children.
+// This invariant is maintained by _renderDOM() which sets innerHTML from
+// the serialized AST, so block element indices always match AST block indices.
 export function domPositionToAST(
   el: HTMLElement,
   doc: DocumentNode,

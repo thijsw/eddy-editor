@@ -80,6 +80,8 @@ function marksEqual(a: Mark[], b: Mark[]): boolean {
   return b.every((m) => setA.has(m.type))
 }
 
+// Returns the original array (by reference) when no merges occurred,
+// so callers can detect changes cheaply via `result !== original`.
 function mergeAdjacentTextNodes(nodes: InlineNode[]): InlineNode[] {
   const result: InlineNode[] = []
   let merged = false

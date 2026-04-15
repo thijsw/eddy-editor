@@ -1,6 +1,6 @@
 import type { DocumentNode, InlineNode, MarkType, TextNode } from './types'
 import type { ASTSelection } from './selection'
-import { normalizeSelection } from './selection'
+import { compareInlineToPosition, normalizeSelection } from './selection'
 
 // ── Mark inspection ───────────────────────────────────────────────────────────
 
@@ -48,44 +48,19 @@ export function isMarkActive(
       const node = inlines[i]
       if (node.type !== 'text') continue
 
-      // Check if this inline is within the selection range
-      const beforeStart =
-        blockIdx < start.blockIndex ||
-        (blockIdx === start.blockIndex &&
-          itemIdx === start.itemIndex &&
-          i < start.inlineIndex) ||
-        (blockIdx === start.blockIndex &&
-          itemIdx === start.itemIndex &&
-          i === start.inlineIndex &&
-          node.text.length > 0 &&
-          start.offset >= node.text.length)
+      const cmpStart = compareInlineToPosition(blockIdx, itemIdx, i, start)
+      const cmpEnd = compareInlineToPosition(blockIdx, itemIdx, i, end)
 
-      const afterEnd =
-        blockIdx > end.blockIndex ||
-        (blockIdx === end.blockIndex &&
-          itemIdx === end.itemIndex &&
-          i > end.inlineIndex) ||
-        (blockIdx === end.blockIndex &&
-          itemIdx === end.itemIndex &&
-          i === end.inlineIndex &&
-          end.offset === 0)
+      // Skip nodes entirely outside the selection
+      if (cmpStart < 0 || cmpEnd > 0) continue
 
-      if (beforeStart || afterEnd) continue
+      // For the first/last node in the range, only the selected slice counts
+      const selStart = cmpStart === 0 ? start.offset : 0
+      const selEnd = cmpEnd === 0 ? end.offset : node.text.length
 
-      // Determine the text slice that is selected within this node
-      const selStart =
-        blockIdx === start.blockIndex &&
-          itemIdx === start.itemIndex &&
-          i === start.inlineIndex
-          ? start.offset
-          : 0
-      const selEnd =
-        blockIdx === end.blockIndex && itemIdx === end.itemIndex && i === end.inlineIndex
-          ? end.offset
-          : node.text.length
-
-      const selectedText = node.text.slice(selStart, selEnd)
-      if (selectedText === '') continue
+      // Skip if the selected portion is empty (e.g. cursor at end of first node)
+      if (selStart >= selEnd && selStart >= node.text.length) continue
+      if (node.text.slice(selStart, selEnd) === '') continue
 
       foundAnyText = true
       if (!hasMark(node, mark)) {

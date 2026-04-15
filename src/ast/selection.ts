@@ -53,3 +53,20 @@ export function comparePositions(a: ASTPosition, b: ASTPosition): number {
 export function collapsedAt(pos: ASTPosition): ASTSelection {
   return { anchor: pos, head: pos }
 }
+
+/**
+ * Compares an inline node's container position (block, item, inline index)
+ * against an ASTPosition. Returns -1 if the node is before pos, 1 if after,
+ * 0 if it's the same inline node. Ignores offset — this checks the node, not
+ * a character within it.
+ */
+export function compareInlineToPosition(
+  blockIdx: number,
+  itemIdx: number,
+  inlineIdx: number,
+  pos: ASTPosition,
+): number {
+  if (blockIdx !== pos.blockIndex) return blockIdx - pos.blockIndex
+  if (itemIdx !== pos.itemIndex) return itemIdx - pos.itemIndex
+  return inlineIdx - pos.inlineIndex
+}

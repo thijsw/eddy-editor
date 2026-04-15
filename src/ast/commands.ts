@@ -10,7 +10,7 @@ import type {
   TextNode,
 } from './types'
 import type { ASTPosition, ASTSelection } from './selection'
-import { collapsedAt, isCollapsed, normalizeSelection } from './selection'
+import { collapsedAt, compareInlineToPosition, isCollapsed, normalizeSelection } from './selection'
 import { isMarkActive, isCursorAtBlockEnd, isCursorAtBlockStart } from './inspect'
 
 // ── Command result ────────────────────────────────────────────────────────────
@@ -95,6 +95,38 @@ function remapPosition(
   }
 }
 
+// ── Block helpers ─────────────────────────────────────────────────────────────
+
+function emptyParagraph(): ParagraphNode {
+  return { type: 'paragraph', children: [{ type: 'text', text: '', marks: [] }] }
+}
+
+/**
+ * Iterates over every (blockIndex, itemIndex) pair within a selection range,
+ * calling `callback` for each inline group. Handles lists (multiple items per
+ * block) and non-list blocks (single inline group at itemIndex 0).
+ */
+function forEachInlineGroup(
+  doc: DocumentNode,
+  start: ASTPosition,
+  end: ASTPosition,
+  callback: (blockIndex: number, itemIndex: number) => void,
+): void {
+  for (let blockIndex = start.blockIndex; blockIndex <= end.blockIndex; blockIndex++) {
+    const block = doc.children[blockIndex]
+    if (!block) continue
+    if (block.type === 'list') {
+      const startItem = blockIndex === start.blockIndex ? start.itemIndex : 0
+      const endItem = blockIndex === end.blockIndex ? end.itemIndex : block.items.length - 1
+      for (let itemIndex = startItem; itemIndex <= endItem; itemIndex++) {
+        callback(blockIndex, itemIndex)
+      }
+    } else {
+      callback(blockIndex, 0)
+    }
+  }
+}
+
 // ── Inline helpers ────────────────────────────────────────────────────────────
 
 function splitTextAt(node: TextNode, offset: number): [TextNode, TextNode] {
@@ -157,45 +189,21 @@ export function toggleMark(
   const [start, end] = normalizeSelection(sel)
 
   let newDoc = doc
-  for (let blockIndex = start.blockIndex; blockIndex <= end.blockIndex; blockIndex++) {
-    const block = newDoc.children[blockIndex]
-    if (!block) continue
-
-    if (block.type === 'list') {
-      const startItem = blockIndex === start.blockIndex ? start.itemIndex : 0
-      const endItem = blockIndex === end.blockIndex ? end.itemIndex : block.items.length - 1
-      for (let itemIndex = startItem; itemIndex <= endItem; itemIndex++) {
-        newDoc = applyMarkToInlines(newDoc, blockIndex, itemIndex, start, end, mark, active)
-      }
-    } else {
-      newDoc = applyMarkToInlines(newDoc, blockIndex, 0, start, end, mark, active)
-    }
-  }
+  forEachInlineGroup(doc, start, end, (blockIndex, itemIndex) => {
+    newDoc = applyMarkToInlines(newDoc, blockIndex, itemIndex, start, end, mark, active)
+  })
 
   // Remap selection through the changed inline structure.
   // Text splits change node boundaries but not character content,
   // so flat character offsets are stable across the transform.
   let newAnchor = sel.anchor
   let newHead = sel.head
-  for (let blockIndex = start.blockIndex; blockIndex <= end.blockIndex; blockIndex++) {
-    const block = newDoc.children[blockIndex]
-    if (!block) continue
-    if (block.type === 'list') {
-      const startItem = blockIndex === start.blockIndex ? start.itemIndex : 0
-      const endItem = blockIndex === end.blockIndex ? end.itemIndex : block.items.length - 1
-      for (let itemIndex = startItem; itemIndex <= endItem; itemIndex++) {
-        const oldInlines = getInlines(doc, blockIndex, itemIndex)
-        const newInlines = getInlines(newDoc, blockIndex, itemIndex)
-        newAnchor = remapPosition(oldInlines, newInlines, newAnchor, blockIndex, itemIndex)
-        newHead = remapPosition(oldInlines, newInlines, newHead, blockIndex, itemIndex)
-      }
-    } else {
-      const oldInlines = getInlines(doc, blockIndex, 0)
-      const newInlines = getInlines(newDoc, blockIndex, 0)
-      newAnchor = remapPosition(oldInlines, newInlines, newAnchor, blockIndex, 0)
-      newHead = remapPosition(oldInlines, newInlines, newHead, blockIndex, 0)
-    }
-  }
+  forEachInlineGroup(newDoc, start, end, (blockIndex, itemIndex) => {
+    const oldInlines = getInlines(doc, blockIndex, itemIndex)
+    const newInlines = getInlines(newDoc, blockIndex, itemIndex)
+    newAnchor = remapPosition(oldInlines, newInlines, newAnchor, blockIndex, itemIndex)
+    newHead = remapPosition(oldInlines, newInlines, newHead, blockIndex, itemIndex)
+  })
 
   return { doc: newDoc, selection: { anchor: newAnchor, head: newHead } }
 }
@@ -219,23 +227,16 @@ function applyMarkToInlines(
       continue
     }
 
-    // Determine if this text node is within the selection
-    const isFirstNode = blockIndex === start.blockIndex && itemIndex === start.itemIndex && i === start.inlineIndex
-    const isLastNode = blockIndex === end.blockIndex && itemIndex === end.itemIndex && i === end.inlineIndex
-    const isBeforeStart = blockIndex < start.blockIndex ||
-      (blockIndex === start.blockIndex && itemIndex < start.itemIndex) ||
-      (blockIndex === start.blockIndex && itemIndex === start.itemIndex && i < start.inlineIndex)
-    const isAfterEnd = blockIndex > end.blockIndex ||
-      (blockIndex === end.blockIndex && itemIndex > end.itemIndex) ||
-      (blockIndex === end.blockIndex && itemIndex === end.itemIndex && i > end.inlineIndex)
+    const cmpStart = compareInlineToPosition(blockIndex, itemIndex, i, start)
+    const cmpEnd = compareInlineToPosition(blockIndex, itemIndex, i, end)
 
-    if (isBeforeStart || isAfterEnd) {
+    if (cmpStart < 0 || cmpEnd > 0) {
       result.push(node)
       continue
     }
 
-    const textStart = isFirstNode ? start.offset : 0
-    const textEnd = isLastNode ? end.offset : node.text.length
+    const textStart = cmpStart === 0 ? start.offset : 0
+    const textEnd = cmpEnd === 0 ? end.offset : node.text.length
 
     // Split node into: before-selection, within-selection, after-selection
     if (textStart > 0) {
@@ -360,7 +361,9 @@ export function toggleList(
     ...children.slice(end.blockIndex + 1),
   ]
 
-  // Adjust selection for the collapsed blocks
+  // When wrapping N paragraphs into one list, each paragraph (which was its own
+  // block) becomes a list item inside a single block at start.blockIndex.
+  // The old blockIndex maps to itemIndex within that list.
   const newAnchor: ASTPosition = {
     blockIndex: start.blockIndex,
     itemIndex: sel.anchor.blockIndex - start.blockIndex,
@@ -386,12 +389,12 @@ function adjustSelectionForListUnwrap(
   start: ASTPosition,
   end: ASTPosition,
 ): ASTSelection {
-  // When unwrapping lists, each list item becomes a separate block.
-  // We need to adjust the block indices.
+  // When unwrapping lists, each list with N items becomes N separate blocks.
+  // A list that was 1 block now occupies N blocks, shifting all subsequent
+  // indices by (N - 1). We sum these offsets for every list before the position.
   function adjustPosition(pos: ASTPosition): ASTPosition {
     if (pos.blockIndex < start.blockIndex) return pos
 
-    // Count how many blocks are before this position
     let blockOffset = 0
     for (let i = start.blockIndex; i <= Math.min(pos.blockIndex, end.blockIndex); i++) {
       const block = doc.children[i]
@@ -445,11 +448,7 @@ export function insertParagraph(
     // Insert empty paragraph BEFORE current block; cursor goes into the new paragraph.
     // This matches browser behaviour where Enter at position 0 of a heading
     // inserts blank line above and leaves heading content below.
-    const emptyPara: ParagraphNode = {
-      type: 'paragraph',
-      children: [{ type: 'text', text: '', marks: [] }],
-    }
-    children.splice(pos.blockIndex, 0, emptyPara)
+    children.splice(pos.blockIndex, 0, emptyParagraph())
 
     const newSel = collapsedAt({
       blockIndex: pos.blockIndex + 1,
@@ -462,11 +461,7 @@ export function insertParagraph(
 
   if (atEnd) {
     // Insert empty paragraph AFTER current block; cursor goes to it
-    const emptyPara: ParagraphNode = {
-      type: 'paragraph',
-      children: [{ type: 'text', text: '', marks: [] }],
-    }
-    children.splice(pos.blockIndex + 1, 0, emptyPara)
+    children.splice(pos.blockIndex + 1, 0, emptyParagraph())
     const newSel = collapsedAt({
       blockIndex: pos.blockIndex + 1,
       itemIndex: 0,
@@ -506,7 +501,13 @@ function splitListItem(doc: DocumentNode, sel: ASTSelection): CommandResult {
   const item = block.items[pos.itemIndex]
   if (!item) return { doc, selection: sel }
 
-  // If list item is empty, exit the list: convert to paragraph
+  // If the list item is empty, pressing Enter exits the list by converting
+  // the empty item to a paragraph. There are four cases depending on
+  // where the empty item sits within the list:
+  //   1. Only item    → replace the entire list with a paragraph
+  //   2. First item   → insert paragraph before the (now shorter) list
+  //   3. Last item    → insert paragraph after the (now shorter) list
+  //   4. Middle item  → split the list into two lists with a paragraph between
   const isEmpty =
     item.children.length === 0 ||
     (item.children.length === 1 &&
@@ -518,10 +519,7 @@ function splitListItem(doc: DocumentNode, sel: ASTSelection): CommandResult {
     const items = [...block.items]
     items.splice(pos.itemIndex, 1)
 
-    const newPara: ParagraphNode = {
-      type: 'paragraph',
-      children: [{ type: 'text', text: '', marks: [] }],
-    }
+    const newPara = emptyParagraph()
 
     if (items.length === 0) {
       // Replace entire list with paragraph
