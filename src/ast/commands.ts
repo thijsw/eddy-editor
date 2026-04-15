@@ -452,7 +452,7 @@ export function insertParagraph(
     children.splice(pos.blockIndex, 0, emptyPara)
 
     const newSel = collapsedAt({
-      blockIndex: pos.blockIndex,
+      blockIndex: pos.blockIndex + 1,
       itemIndex: 0,
       inlineIndex: 0,
       offset: 0,

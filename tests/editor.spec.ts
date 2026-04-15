@@ -518,9 +518,9 @@ test('realistic: Enter at the beginning of a heading creates an empty paragraph 
   await page.keyboard.type('Before')
 
   const output = await getOutput(page)
-  expect(output).toContain('<h2>')
-  expect(output).toContain('Hello World')
-  expect(output).toMatch(/<p>Before<\/p>/)
+  // Empty paragraph was inserted above; cursor stayed in the heading
+  // so "Before" is prepended to heading text
+  expect(output).toContain('<h2>BeforeHello World</h2>')
 })
 
 test('realistic: Enter in the middle of a heading splits content correctly', async ({ page }) => {
@@ -610,3 +610,4 @@ test('realistic: formatting a word in the initial content (without clearing)', a
   expect(output).toContain('Try ')
   expect(output).toContain(' this text!')
 })
+
