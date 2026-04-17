@@ -27,8 +27,7 @@ export interface ToolbarConfig {
   /** Tooltip text, e.g. "Bold (Mod+B)" */
   title: string
   /**
-   * Optional Vue component rendered as the button content.
-   * Accepts any Vue component — including lucide-vue-next components.
+   * Optional Vue component rendered as the button content (e.g. a `@lucide/vue` icon).
    * When absent, `label` text is shown instead.
    */
   icon?: Component

@@ -50,6 +50,11 @@
     "@lucide/vue": "^1.0.0",
     "vue": "^3.0.0"
   },
+  "peerDependenciesMeta": {
+    "@lucide/vue": {
+      "optional": true
+    }
+  },
   "devDependencies": {
     "@lucide/vue": "^1.8.0",
     "@playwright/test": "^1.59.1",

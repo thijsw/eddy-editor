@@ -24,7 +24,7 @@ npm install eddy-editor
 pnpm add eddy-editor
 ```
 
-Vue 3 is a peer dependency and must be installed separately.
+Vue 3 is a peer dependency. If you use the built-in `<eddy-toolbar>`, also install `@lucide/vue` for its icons. If you render a custom toolbar, it is not required.
 
 ## Basic usage
 
