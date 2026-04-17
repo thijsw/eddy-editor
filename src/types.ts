@@ -11,6 +11,8 @@ export interface EditorAPI {
   toggleMark(mark: MarkType): void
   setBlockType(type: 'paragraph' | 'heading', attrs?: { level?: 1 | 2 | 3 | 4 | 5 | 6 }): void
   toggleList(ordered: boolean): void
+  setLink(href: string): void
+  removeLink(): void
   insertHardBreak(): void
   insertParagraph(): void
 
@@ -19,6 +21,7 @@ export interface EditorAPI {
   getBlockType(): 'paragraph' | 'heading' | 'list' | 'mixed'
   getHeadingLevel(): 1 | 2 | 3 | 4 | 5 | 6 | null
   getListType(): 'ordered' | 'unordered' | null
+  getLinkHref(): string | null
 }
 
 export interface ToolbarConfig {

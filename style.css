@@ -161,3 +161,9 @@
 .eddy-editor li {
   margin: 0.25em 0;
 }
+
+.eddy-editor a {
+  color: #2563eb;
+  text-decoration: underline;
+  cursor: text;
+}

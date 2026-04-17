@@ -3,6 +3,8 @@ import type {
   DocumentNode,
   InlineNode,
   ListItemNode,
+  Mark,
+  MarkAttrs,
   MarkType,
   ParagraphNode,
   TextNode,
@@ -11,6 +13,7 @@ import { generateId, emptyText, emptyParagraph, withChildren } from './types'
 import type { ASTPosition, ASTSelection } from './selection'
 import { blockIndexOf, collapsedAt, isCollapsed, normalizeSelection } from './selection'
 import { isMarkActive, isCursorAtBlockEnd, isCursorAtBlockStart } from './inspect'
+import { sanitizeHref } from './sanitize-href'
 
 export interface CommandResult {
   doc: DocumentNode
@@ -125,6 +128,7 @@ function applyMarkToBlock(
   end: ASTPosition,
   mark: MarkType,
   remove: boolean,
+  attrs?: MarkAttrs,
 ): BlockNode {
   const isStartBlock = block.id === start.blockId
   const isEndBlock = block.id === end.blockId
@@ -150,12 +154,7 @@ function applyMarkToBlock(
 
     const selectedText = node.text.slice(textStart, textEnd)
     if (selectedText.length > 0) {
-      const marks = remove
-        ? node.marks.filter((m) => m.type !== mark)
-        : node.marks.some((m) => m.type === mark)
-          ? node.marks
-          : [...node.marks, { type: mark }]
-      result.push({ type: 'text', text: selectedText, marks })
+      result.push({ type: 'text', text: selectedText, marks: nextMarks(node.marks, mark, remove, attrs) })
     }
 
     if (textEnd < node.text.length) {
@@ -164,6 +163,81 @@ function applyMarkToBlock(
   }
 
   return { ...block, children: result }
+}
+
+function nextMarks(current: Mark[], mark: MarkType, remove: boolean, attrs?: MarkAttrs): Mark[] {
+  if (remove) return current.filter((m) => m.type !== mark)
+  // Replace any existing mark of the same type so attribute updates (e.g. a
+  // new link href) take effect. For attribute-free marks this is idempotent.
+  const withoutSameType = current.filter((m) => m.type !== mark)
+  const fresh: Mark = attrs ? { type: mark, attrs } : { type: mark }
+  return [...withoutSameType, fresh]
+}
+
+// ── Link commands ─────────────────────────────────────────────────────────────
+
+/**
+ * Expands a collapsed cursor inside a link to cover the entire contiguous
+ * run of text carrying the same link href. Returns null when the position
+ * isn't inside a link.
+ */
+function linkRangeAt(doc: DocumentNode, pos: ASTPosition): ASTSelection | null {
+  const block = doc.blocks[blockIndexOf(doc).get(pos.blockId) ?? -1]
+  if (!block) return null
+  const node = block.children[pos.inlineIndex]
+  if (node?.type !== 'text') return null
+  const href = node.marks.find((m) => m.type === 'link')?.attrs?.href
+  if (href === undefined) return null
+
+  const sameLink = (n: InlineNode): boolean =>
+    n.type === 'text' && n.marks.some((m) => m.type === 'link' && m.attrs?.href === href)
+
+  let startI = pos.inlineIndex
+  while (startI > 0 && sameLink(block.children[startI - 1])) startI--
+  let endI = pos.inlineIndex
+  while (endI < block.children.length - 1 && sameLink(block.children[endI + 1])) endI++
+
+  const endNode = block.children[endI] as TextNode
+  return {
+    anchor: { blockId: pos.blockId, inlineIndex: startI, offset: 0 },
+    head: { blockId: pos.blockId, inlineIndex: endI, offset: endNode.text.length },
+  }
+}
+
+/**
+ * Applies a link mark with the given href across the selection. When the
+ * selection is collapsed inside an existing link, the entire link range is
+ * targeted so editing the href updates the whole anchor. A collapsed cursor
+ * outside a link is a no-op — same shape as toggleMark.
+ */
+export function setLink(doc: DocumentNode, sel: ASTSelection, href: string): CommandResult {
+  const safe = sanitizeHref(href)
+  if (safe === null) return { doc, selection: sel }
+
+  const effective = isCollapsed(sel) ? (linkRangeAt(doc, sel.anchor) ?? sel) : sel
+  if (isCollapsed(effective)) return { doc, selection: sel }
+
+  const [start, end, startIdx, endIdx] = blockRangeIdx(doc, effective)
+  const newDoc = mapBlocksInRange(doc, startIdx, endIdx, (block) =>
+    applyMarkToBlock(block, start, end, 'link', false, { href: safe }),
+  )
+  return { doc: newDoc, selection: remapSelection(doc, newDoc, sel) }
+}
+
+/**
+ * Removes the link mark from the selection. A collapsed cursor inside a
+ * link strips it from the whole link range; a collapsed cursor outside a
+ * link is a no-op.
+ */
+export function removeLink(doc: DocumentNode, sel: ASTSelection): CommandResult {
+  const effective = isCollapsed(sel) ? (linkRangeAt(doc, sel.anchor) ?? sel) : sel
+  if (isCollapsed(effective)) return { doc, selection: sel }
+
+  const [start, end, startIdx, endIdx] = blockRangeIdx(doc, effective)
+  const newDoc = mapBlocksInRange(doc, startIdx, endIdx, (block) =>
+    applyMarkToBlock(block, start, end, 'link', true),
+  )
+  return { doc: newDoc, selection: remapSelection(doc, newDoc, sel) }
 }
 
 // ── setBlockType ──────────────────────────────────────────────────────────────

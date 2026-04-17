@@ -92,8 +92,29 @@ const BTN = {
   italic: 'button[title="Italic (Mod+I)"]',
   underline: 'button[title="Underline (Mod+U)"]',
   strikethrough: 'button[title="Strikethrough"]',
+  link: 'button[title="Link (Mod+K)"]',
   ul: 'button[title="Bullet list"]',
   ol: 'button[title="Numbered list"]',
+}
+
+/** Queue a single prompt response; optionally capture the default shown. */
+function handleNextPrompt(
+  page: Page,
+  response: string | null,
+  onDefault?: (defaultValue: string) => void,
+) {
+  page.once('dialog', async (dialog) => {
+    if (onDefault) onDefault(dialog.defaultValue())
+    if (response === null) await dialog.dismiss()
+    else await dialog.accept(response)
+  })
+}
+
+/** Replace the editor content via the playground's data-testid textarea (v-model inbound). */
+async function setContent(page: Page, html: string) {
+  const setter = page.locator('[data-testid="content-setter"]')
+  await setter.fill(html)
+  await setter.dispatchEvent('change')
 }
 
 /** Select a heading level (or "paragraph") from the block type dropdown */
@@ -646,6 +667,139 @@ test('disabled: re-enabling restores editing', async ({ page }) => {
 })
 
 // ── Realistic user scenarios (continued) ─────────────────────────────────────
+
+// ── Links ────────────────────────────────────────────────────────────────────
+
+test('link: toolbar button wraps selected text in anchor with href', async ({ page }) => {
+  await clearAndType(page, 'click here')
+  await selectInEditor(page, 'here')
+  handleNextPrompt(page, 'https://example.com')
+  await page.click(BTN.link)
+  const output = await getOutput(page)
+  expect(output).toMatch(/<a href="https:\/\/example\.com">here<\/a>/)
+  expect(output).toContain('click ')
+})
+
+test('link: Mod+K applies link to selected text', async ({ page }) => {
+  await clearAndType(page, 'see docs')
+  await selectInEditor(page, 'docs')
+  handleNextPrompt(page, 'https://docs.example')
+  await page.keyboard.press('Meta+K')
+  const output = await getOutput(page)
+  expect(output).toMatch(/<a href="https:\/\/docs\.example">docs<\/a>/)
+})
+
+test('link: cursor inside existing link edits the href', async ({ page }) => {
+  await clearAndType(page, 'go home')
+  await selectInEditor(page, 'home')
+  handleNextPrompt(page, 'https://old.example')
+  await page.click(BTN.link)
+  // Cursor into the linked word; toolbar should show active and prompt preloaded.
+  await placeCursorIn(page, 'home')
+  let defaultShown = ''
+  handleNextPrompt(page, 'https://new.example', (d) => {
+    defaultShown = d
+  })
+  await page.click(BTN.link)
+  expect(defaultShown).toBe('https://old.example')
+  const output = await getOutput(page)
+  expect(output).toContain('<a href="https://new.example">home</a>')
+  expect(output).not.toContain('old.example')
+})
+
+test('link: empty prompt removes the link (cursor inside link)', async ({ page }) => {
+  await clearAndType(page, 'drop me')
+  await selectInEditor(page, 'me')
+  handleNextPrompt(page, 'https://x.example')
+  await page.click(BTN.link)
+  await placeCursorIn(page, 'me')
+  handleNextPrompt(page, '')
+  await page.click(BTN.link)
+  const output = await getOutput(page)
+  expect(output).not.toContain('<a ')
+  expect(output).toContain('drop me')
+})
+
+test('link: cancelling the prompt leaves the document unchanged', async ({ page }) => {
+  await clearAndType(page, 'leave alone')
+  await selectInEditor(page, 'alone')
+  handleNextPrompt(page, null)
+  await page.click(BTN.link)
+  const output = await getOutput(page)
+  expect(output).not.toContain('<a ')
+  expect(output).toContain('leave alone')
+})
+
+test('link: toolbar is active when cursor is inside a link', async ({ page }) => {
+  await clearAndType(page, 'active test')
+  await selectInEditor(page, 'test')
+  handleNextPrompt(page, 'https://e.example')
+  await page.click(BTN.link)
+  await placeCursorIn(page, 'test')
+  await expect(page.locator(BTN.link)).toHaveAttribute('aria-pressed', 'true')
+  await placeCursorIn(page, 'active')
+  await expect(page.locator(BTN.link)).toHaveAttribute('aria-pressed', 'false')
+})
+
+test('link: v-model round-trips anchor HTML through the editor', async ({ page }) => {
+  await setContent(page, '<p>hello <a href="https://round.example">world</a></p>')
+  const output = await getOutput(page)
+  expect(output).toBe('<p>hello <a href="https://round.example">world</a></p>')
+})
+
+test('link: javascript: hrefs are sanitized away on parse', async ({ page }) => {
+  await setContent(page, '<p>click <a href="javascript:alert(1)">here</a></p>')
+  const output = await getOutput(page)
+  expect(output).not.toContain('<a ')
+  expect(output).not.toContain('javascript:')
+  expect(output).toContain('click here')
+})
+
+test('link: adjacent links with different hrefs are preserved separately', async ({ page }) => {
+  await setContent(
+    page,
+    '<p><a href="https://a.example">AA</a><a href="https://b.example">BB</a></p>',
+  )
+  const output = await getOutput(page)
+  expect(output).toContain('<a href="https://a.example">AA</a>')
+  expect(output).toContain('<a href="https://b.example">BB</a>')
+  // Must not have merged into one anchor
+  expect(output).not.toMatch(/<a href="https:\/\/a\.example">AA BB<\/a>/)
+})
+
+test('link: href with double quotes is escaped in output', async ({ page }) => {
+  await clearAndType(page, 'safe text')
+  await selectInEditor(page, 'safe')
+  handleNextPrompt(page, 'https://x.example/?q="evil')
+  await page.click(BTN.link)
+  const output = await getOutput(page)
+  expect(output).toContain('&quot;evil')
+  expect(output).not.toMatch(/href="[^"]*"evil/)
+})
+
+test('link: clicking link with collapsed cursor outside any link is a no-op', async ({ page }) => {
+  await clearAndType(page, 'plain')
+  // Cursor is at end of typed text, no selection, no link under cursor
+  handleNextPrompt(page, 'https://nope.example')
+  await page.click(BTN.link)
+  const output = await getOutput(page)
+  expect(output).not.toContain('<a ')
+  expect(output).toContain('plain')
+})
+
+test('link: undo removes an applied link', async ({ page }) => {
+  await clearAndType(page, 'undo link')
+  await selectInEditor(page, 'link')
+  handleNextPrompt(page, 'https://undo.example')
+  await page.click(BTN.link)
+  let output = await getOutput(page)
+  expect(output).toContain('<a href="https://undo.example">link</a>')
+
+  await page.keyboard.press('Meta+Z')
+  output = await getOutput(page)
+  expect(output).not.toContain('<a ')
+  expect(output).toContain('undo link')
+})
 
 test('realistic: formatting a word in the initial content (without clearing)', async ({ page }) => {
   // The playground loads with content — do NOT clear it

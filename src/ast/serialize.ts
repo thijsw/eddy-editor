@@ -1,14 +1,15 @@
-import type { BlockNode, DocumentNode, InlineNode, MarkType, ListItemNode } from './types'
+import type { BlockNode, DocumentNode, InlineNode, Mark, MarkType, ListItemNode } from './types'
 
 const MARK_TO_TAG: Record<MarkType, string> = {
+  link: 'a',
   bold: 'strong',
   italic: 'em',
   underline: 'u',
   strikethrough: 's',
 }
 
-// Canonical mark order: bold wraps italic wraps underline wraps strikethrough.
-const MARK_ORDER: MarkType[] = ['bold', 'italic', 'underline', 'strikethrough']
+// Canonical mark order: link wraps bold wraps italic wraps underline wraps strikethrough.
+const MARK_ORDER: MarkType[] = ['link', 'bold', 'italic', 'underline', 'strikethrough']
 
 function serializeInline(node: InlineNode): string {
   if (node.type === 'hardBreak') return '<br>'
@@ -18,14 +19,21 @@ function serializeInline(node: InlineNode): string {
 
   return [...node.marks]
     .sort((a, b) => MARK_ORDER.indexOf(a.type) - MARK_ORDER.indexOf(b.type))
-    .reduceRight((inner, mark) => {
-      const tag = MARK_TO_TAG[mark.type]
-      return `<${tag}>${inner}</${tag}>`
-    }, text)
+    .reduceRight((inner, mark) => openTag(mark) + inner + `</${MARK_TO_TAG[mark.type]}>`, text)
+}
+
+function openTag(mark: Mark): string {
+  const tag = MARK_TO_TAG[mark.type]
+  if (mark.type === 'link') return `<a href="${escapeAttr(mark.attrs?.href ?? '')}">`
+  return `<${tag}>`
 }
 
 function escapeHTML(text: string): string {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
+function escapeAttr(text: string): string {
+  return escapeHTML(text).replace(/"/g, '&quot;')
 }
 
 function serializeInlinesOrBR(nodes: InlineNode[]): string {

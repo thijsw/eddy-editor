@@ -29,6 +29,7 @@ import {
   Heading4,
   Heading5,
   Heading6,
+  Link,
   List,
   ListOrdered,
 } from '@lucide/vue'
@@ -69,11 +70,33 @@ function listButton(name: string, icon: Component, title: string, ordered: boole
   return { name, icon, title, action: () => props.editor?.toggleList(ordered) }
 }
 
+function linkButton(): ToolbarButton {
+  return {
+    name: 'link',
+    icon: Link,
+    title: 'Link',
+    action: () => {
+      const editor = props.editor
+      if (!editor || typeof window === 'undefined') return
+      const current = editor.getLinkHref()
+      const input = window.prompt(current ? 'Edit link URL' : 'Link URL', current ?? '')
+      if (input === null) return
+      const trimmed = input.trim()
+      if (trimmed === '') {
+        if (current !== null) editor.removeLink()
+        return
+      }
+      editor.setLink(trimmed)
+    },
+  }
+}
+
 const buttons: ToolbarButton[] = [
   markButton('bold', Bold, 'Bold'),
   markButton('italic', Italic, 'Italic'),
   markButton('underline', Underline, 'Underline'),
   markButton('strikethrough', Strikethrough, 'Strikethrough'),
+  linkButton(),
   headingButton(1, Heading1),
   headingButton(2, Heading2),
   headingButton(3, Heading3),

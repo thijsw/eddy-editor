@@ -1,9 +1,14 @@
 // ── Mark types ────────────────────────────────────────────────────────────────
 
-export type MarkType = 'bold' | 'italic' | 'underline' | 'strikethrough'
+export type MarkType = 'bold' | 'italic' | 'underline' | 'strikethrough' | 'link'
+
+export interface MarkAttrs {
+  href?: string
+}
 
 export interface Mark {
   type: MarkType
+  attrs?: MarkAttrs
 }
 
 // ── Inline nodes ──────────────────────────────────────────────────────────────

@@ -69,6 +69,14 @@ export class Editor implements EditorAPI {
     this._apply((doc, sel) => cmd.toggleList(doc, sel, ordered))
   }
 
+  setLink(href: string): void {
+    this._apply((doc, sel) => cmd.setLink(doc, sel, href))
+  }
+
+  removeLink(): void {
+    this._apply((doc, sel) => cmd.removeLink(doc, sel))
+  }
+
   insertParagraph(): void {
     this._apply((doc, sel) => cmd.insertParagraph(doc, sel))
   }
@@ -106,6 +114,11 @@ export class Editor implements EditorAPI {
   getListType(): 'ordered' | 'unordered' | null {
     this._readSelectionFromDOM()
     return this._selection ? inspect.getListType(this._doc, this._selection) : null
+  }
+
+  getLinkHref(): string | null {
+    this._readSelectionFromDOM()
+    return this._selection ? inspect.getLinkHref(this._doc, this._selection) : null
   }
 
   // ── Undo / Redo ───────────────────────────────────────────────────────────

@@ -1,5 +1,6 @@
 import type { BlockNode, DocumentNode, InlineNode, Mark, MarkType } from './types'
 import { generateId, emptyText, emptyParagraph } from './types'
+import { sanitizeHref } from './sanitize-href'
 
 const MARK_TAGS: Record<string, MarkType> = {
   strong: 'bold',
@@ -13,7 +14,12 @@ const MARK_TAGS: Record<string, MarkType> = {
 }
 
 function isInlineLikeTag(tag: string): boolean {
-  return tag === 'br' || tag === 'span' || MARK_TAGS[tag] !== undefined
+  return tag === 'br' || tag === 'span' || tag === 'a' || MARK_TAGS[tag] !== undefined
+}
+
+function linkMarkFor(el: Element): Mark | null {
+  const href = sanitizeHref(el.getAttribute('href'))
+  return href === null ? null : { type: 'link', attrs: { href } }
 }
 
 // ── Inline content parsing ────────────────────────────────────────────────────
@@ -25,15 +31,26 @@ function parseInline(node: Node, marks: Mark[]): InlineNode[] {
   }
   if (node.nodeType !== Node.ELEMENT_NODE) return []
 
-  const tag = (node as Element).tagName.toLowerCase()
+  const el = node as Element
+  const tag = el.tagName.toLowerCase()
   if (tag === 'br') return [{ type: 'hardBreak' }]
 
-  const markType = MARK_TAGS[tag]
-  const childMarks =
-    markType && !marks.some((m) => m.type === markType) ? [...marks, { type: markType }] : marks
+  let childMarks = marks
+  if (tag === 'a') {
+    const linkMark = linkMarkFor(el)
+    // Drop any outer link mark — nested anchors collapse to the innermost href,
+    // matching browser rendering. If sanitization rejects the href, the anchor
+    // wrapper is dropped entirely and children are parsed without a link.
+    if (linkMark) childMarks = [...marks.filter((m) => m.type !== 'link'), linkMark]
+  } else {
+    const markType = MARK_TAGS[tag]
+    if (markType && !marks.some((m) => m.type === markType)) {
+      childMarks = [...marks, { type: markType }]
+    }
+  }
 
   const result: InlineNode[] = []
-  for (const child of node.childNodes) result.push(...parseInline(child, childMarks))
+  for (const child of el.childNodes) result.push(...parseInline(child, childMarks))
   return result
 }
 

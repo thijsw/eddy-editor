@@ -84,6 +84,19 @@ export function getListType(doc: DocumentNode, sel: ASTSelection): 'ordered' | '
   return block.ordered ? 'ordered' : 'unordered'
 }
 
+/**
+ * Returns the href of the link mark at the selection anchor, or null if the
+ * anchor is not inside a link.
+ */
+export function getLinkHref(doc: DocumentNode, sel: ASTSelection): string | null {
+  const pos = sel.anchor
+  const block = doc.blocks[blockIndexOf(doc).get(pos.blockId) ?? -1]
+  const node = block?.children[pos.inlineIndex]
+  if (node?.type !== 'text') return null
+  const href = node.marks.find((m) => m.type === 'link')?.attrs?.href
+  return href ?? null
+}
+
 export function isCursorAtBlockStart(sel: ASTSelection): boolean {
   return sel.anchor.inlineIndex === 0 && sel.anchor.offset === 0
 }
