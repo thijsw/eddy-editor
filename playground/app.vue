@@ -7,11 +7,7 @@
     <main class="playground-main">
       <section class="demo-section">
         <h2 class="section-title">Editor</h2>
-        <eddy-editor v-model="content" :disabled="isDisabled">
-          <template #toolbar="{ editor, plugins, disabled }">
-            <eddy-toolbar :editor="editor" :plugins="plugins" :disabled="disabled" />
-          </template>
-        </eddy-editor>
+        <eddy-editor v-model="content" :disabled="isDisabled" />
         <label class="disabled-toggle">
           <input type="checkbox" v-model="isDisabled" data-testid="toggle-disabled" />
           Disabled
@@ -31,7 +27,7 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import { EddyEditor, EddyToolbar } from 'eddy-editor'
+import { EddyEditor } from 'eddy-editor'
 import HtmlPanel from './html-panel.vue'
 import AstPanel from './ast-panel.vue'
 

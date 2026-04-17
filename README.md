@@ -8,7 +8,7 @@ A lightweight WYSIWYG text editor for Vue 3. AST-based, zero runtime dependencie
 
 - **AST document model** -- content is a typed tree, not raw HTML. Schema rules enforce valid structure (e.g. lists cannot nest inside paragraphs).
 - **No `execCommand`** -- all formatting uses modern Range/Selection APIs via pure AST transforms. No deprecated browser APIs.
-- **Zero runtime dependencies** -- Vue 3 is the only peer dependency. <!-- BUNDLE_SIZE -->**28.99 kB** min / **8.44 kB** gzip<!-- /BUNDLE_SIZE -->.
+- **Zero runtime dependencies** -- Vue 3 is the only peer dependency. <!-- BUNDLE_SIZE -->**29.12 kB** min / **8.56 kB** gzip<!-- /BUNDLE_SIZE -->.
 - **v-model binding** -- two-way HTML string binding. Set content programmatically, read it reactively.
 - **Plugin system** -- every feature (bold, headings, lists) is a plugin. Add custom plugins, override built-ins, or use only what you need.
 - **Full TypeScript API** -- typed commands (`toggleMark`, `setBlockType`, `toggleList`) and state inspection (`isMarkActive`, `getBlockType`, `getHeadingLevel`).
@@ -24,22 +24,18 @@ npm install eddy-editor
 pnpm add eddy-editor
 ```
 
-Vue 3 is a peer dependency. If you use the built-in `<eddy-toolbar>`, also install `@lucide/vue` for its icons. If you render a custom toolbar, it is not required.
+Vue 3 is a peer dependency. `@lucide/vue` is also required for the built-in toolbar's icons; if you render a fully custom toolbar, you can skip it.
 
 ## Basic usage
 
 ```vue
 <template>
-  <eddy-editor v-model="content">
-    <template #toolbar="{ editor, plugins, disabled }">
-      <eddy-toolbar :editor="editor" :plugins="plugins" :disabled="disabled" />
-    </template>
-  </eddy-editor>
+  <eddy-editor v-model="content" />
 </template>
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import { EddyEditor, EddyToolbar } from 'eddy-editor'
+import { EddyEditor } from 'eddy-editor'
 import 'eddy-editor/style.css'
 
 const content = ref('<p>Hello world</p>')
@@ -48,11 +44,11 @@ const content = ref('<p>Hello world</p>')
 
 The `v-model` value is an HTML string. On first render the editor is seeded with that string; every edit emits an updated HTML string back.
 
-All built-in plugins (bold, italic, headings, lists, etc.) are included by default.
+The default toolbar (bold, italic, underline, strikethrough, headings, lists) renders automatically. All built-in plugins are included unless you override them via the `plugins` prop.
 
 ## Custom toolbar
 
-`<eddy-toolbar />` is optional. You can build a fully custom toolbar in two ways.
+The default toolbar renders automatically. Provide the `#toolbar` slot to replace it with your own.
 
 ### Inline via scoped slot
 
@@ -72,6 +68,14 @@ The `#toolbar` slot exposes the `EditorAPI` directly:
 `@mousedown.prevent` is important -- it stops the click from blurring the editor before the command runs.
 
 This works for simple cases, but the slot prop is not reactive to selection changes -- button active states won't update as the cursor moves.
+
+To render no toolbar at all, pass an empty template:
+
+```vue
+<eddy-editor v-model="content">
+  <template #toolbar />
+</eddy-editor>
+```
 
 ### Custom toolbar component with reactive state
 
@@ -168,14 +172,10 @@ const codePlugin = createPlugin({
 
 ### Using custom plugins
 
-Pass plugins via the `plugins` prop. Any plugin whose `name` matches a built-in replaces it; new names are appended.
+Pass plugins via the `plugins` prop. Any plugin whose `name` matches a built-in replaces it; new names are appended. The default toolbar picks them up automatically.
 
 ```vue
-<eddy-editor v-model="content" :plugins="[codePlugin]">
-  <template #toolbar="{ editor, plugins, disabled }">
-    <eddy-toolbar :editor="editor" :plugins="plugins" :disabled="disabled" />
-  </template>
-</eddy-editor>
+<eddy-editor v-model="content" :plugins="[codePlugin]" />
 ```
 
 ### Using built-in plugins individually
@@ -189,7 +189,7 @@ const plugins = [bold, italic, heading1, heading2, unorderedList]
 ```
 
 ```vue
-<eddy-editor v-model="content" :plugins="plugins">
+<eddy-editor v-model="content" :plugins="plugins" />
 ```
 
 ### Built-in plugins
@@ -290,9 +290,9 @@ The full set of AST node types (`DocumentNode`, `BlockNode`, `InlineNode`, `Text
 | `plugins`    | `EddyPlugin[]` | `[]`    | Additional or replacement plugins     |
 | `disabled`   | `boolean`      | `false` | Disables editing and toolbar controls |
 
-| Slot      | Slot props                                                                | Description                     |
-| --------- | ------------------------------------------------------------------------- | ------------------------------- |
-| `toolbar` | `{ editor: EditorAPI \| null, plugins: EddyPlugin[], disabled: boolean }` | Rendered above the editing area |
+| Slot      | Slot props                                                                | Description                                                                                  |
+| --------- | ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `toolbar` | `{ editor: EditorAPI \| null, plugins: EddyPlugin[], disabled: boolean }` | Rendered above the editing area. Falls back to the built-in `<eddy-toolbar>` when not given. |
 
 ### `<eddy-toolbar>`
 

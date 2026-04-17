@@ -1,6 +1,8 @@
 <template>
   <div class="eddy-wrapper">
-    <slot name="toolbar" :editor="api" :plugins="mergedPlugins" :disabled="!!disabled" />
+    <slot name="toolbar" :editor="api" :plugins="mergedPlugins" :disabled="!!disabled">
+      <eddy-toolbar :editor="api" :plugins="mergedPlugins" :disabled="!!disabled" />
+    </slot>
 
     <div
       ref="editorEl"
@@ -17,6 +19,7 @@
 
 <script setup lang="ts">
 import { computed, shallowRef, watch, onMounted, useTemplateRef } from 'vue'
+import EddyToolbar from './eddy-toolbar.vue'
 import { Editor } from '../editor'
 import { matchesKeybinding } from '../matches-keybinding'
 import { defaultPlugins } from '../plugins/index'
