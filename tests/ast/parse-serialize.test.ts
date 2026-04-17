@@ -104,6 +104,88 @@ describe('parseHTML', () => {
   })
 })
 
+describe('parseHTML — sanitisation', () => {
+  it('strips style/class/id/onclick/data-* attributes from supported tags', () => {
+    const html =
+      '<p style="color:red" class="foo" id="bar" onclick="alert(1)" data-x="y">hello</p>'
+    expect(serializeToHTML(parseHTML(html))).toBe('<p>hello</p>')
+  })
+
+  it('strips attributes from headings and list items', () => {
+    const html = '<h2 style="font-size:20px">Title</h2><ul><li class="x">item</li></ul>'
+    expect(serializeToHTML(parseHTML(html))).toBe('<h2>Title</h2><ul><li>item</li></ul>')
+  })
+
+  it('strips attributes from mark tags', () => {
+    const html = '<p><strong style="color:red" class="hot">bold</strong></p>'
+    expect(serializeToHTML(parseHTML(html))).toBe('<p><strong>bold</strong></p>')
+  })
+
+  it('rejects a foreign data-block-id (would otherwise allow attribute injection)', () => {
+    const evil = `evil"><script>alert(1)</script><`
+    const doc = parseHTML(`<p data-block-id='${evil}'>hello</p>`)
+    // The accepted block id format is base36 only.
+    expect(doc.blocks[0].id).toMatch(/^[0-9a-z]+$/)
+    // No injected markup survives serialisation.
+    expect(serializeToHTML(doc)).toBe('<p>hello</p>')
+  })
+
+  it('preserves a well-formed data-block-id', () => {
+    const doc = parseHTML('<p data-block-id="abc123">hello</p>')
+    expect(doc.blocks[0].id).toBe('abc123')
+  })
+
+  it('drops <script> tags entirely', () => {
+    const doc = parseHTML('<p>before</p><script>alert(1)</script><p>after</p>')
+    expect(serializeToHTML(doc)).toBe('<p>before</p><p>after</p>')
+  })
+
+  it('drops <style> tags entirely', () => {
+    const doc = parseHTML('<style>body { color: red }</style><p>hi</p>')
+    expect(serializeToHTML(doc)).toBe('<p>hi</p>')
+  })
+
+  it('input containing only a <script> yields an empty paragraph', () => {
+    expect(serializeToHTML(parseHTML('<script>alert(1)</script>'))).toBe('<p><br></p>')
+  })
+
+  it('converts <b> to <strong> and never emits <b>', () => {
+    expect(serializeToHTML(parseHTML('<p><b>bold</b></p>'))).toBe('<p><strong>bold</strong></p>')
+  })
+
+  it('converts <i> to <em> and never emits <i>', () => {
+    expect(serializeToHTML(parseHTML('<p><i>italic</i></p>'))).toBe('<p><em>italic</em></p>')
+  })
+
+  it('unwraps unknown block elements while keeping nested block structure', () => {
+    const html = '<section><h1>Title</h1><p>Body</p></section>'
+    expect(serializeToHTML(parseHTML(html))).toBe('<h1>Title</h1><p>Body</p>')
+  })
+
+  it('unwraps deeply nested unknown wrappers', () => {
+    const html = '<article><header><h2>T</h2></header><main><p>B</p></main></article>'
+    expect(serializeToHTML(parseHTML(html))).toBe('<h2>T</h2><p>B</p>')
+  })
+
+  it('treats inline mark tags at the document root as a paragraph with the mark applied', () => {
+    expect(serializeToHTML(parseHTML('<strong>bold</strong>'))).toBe('<p><strong>bold</strong></p>')
+  })
+
+  it('unwraps unknown inline-ish tags (e.g. <a>) preserving their text', () => {
+    expect(serializeToHTML(parseHTML('<p>see <a href="x">link</a> here</p>'))).toBe(
+      '<p>see link here</p>',
+    )
+  })
+
+  it('parser output is idempotent — re-parsing canonical output yields the same HTML', () => {
+    const messy =
+      '<section><div style="x" class="y"><b>bold</b> and <i>italic</i></div><p>more</p></section>'
+    const once = serializeToHTML(parseHTML(messy))
+    const twice = serializeToHTML(parseHTML(once))
+    expect(twice).toBe(once)
+  })
+})
+
 describe('serializeToHTML', () => {
   it('serializes a paragraph', () => {
     const doc = parseHTML('<p>hello</p>')

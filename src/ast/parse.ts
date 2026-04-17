@@ -12,6 +12,10 @@ const MARK_TAGS: Record<string, MarkType> = {
   del: 'strikethrough',
 }
 
+function isInlineLikeTag(tag: string): boolean {
+  return tag === 'br' || tag === 'span' || MARK_TAGS[tag] !== undefined
+}
+
 // ── Inline content parsing ────────────────────────────────────────────────────
 
 function parseInline(node: Node, marks: Mark[]): InlineNode[] {
@@ -41,8 +45,14 @@ function parseBlockChildren(el: Element): InlineNode[] {
 
 // ── Block parsing ─────────────────────────────────────────────────────────────
 
+/**
+ * Read an existing data-block-id only if it matches our generator's base36
+ * format. Foreign values are rejected — they could otherwise break out of the
+ * attribute when serializeToDOMHTML interpolates them into innerHTML.
+ */
 function blockId(el: Element): string {
-  return el.getAttribute('data-block-id') || generateId()
+  const id = el.getAttribute('data-block-id')
+  return id && /^[0-9a-z]+$/.test(id) ? id : generateId()
 }
 
 function parseBlock(el: Element, indent = 0): BlockNode[] {
@@ -94,38 +104,61 @@ function parseBlock(el: Element, indent = 0): BlockNode[] {
     return blocks
   }
 
-  // Unknown block element — promote children as a paragraph.
-  return [{ id: blockId(el), type: 'paragraph', children: parseBlockChildren(el) }]
+  // Drop entirely — these would otherwise leak their source code as visible text.
+  if (tag === 'script' || tag === 'style') return []
+
+  // Inline-like at block context — wrap in a paragraph so marks survive.
+  if (isInlineLikeTag(tag)) {
+    return [{ id: generateId(), type: 'paragraph', children: parseInline(el, []) }]
+  }
+
+  // Unknown element — drop the wrapper and recurse children at block level so
+  // nested block structure (e.g. <section><h1/><p/></section>) is preserved.
+  return unwrapAsBlocks(el.childNodes, indent)
 }
 
 // ── Document parsing ──────────────────────────────────────────────────────────
 
-function parseChildNodes(childNodes: NodeListOf<ChildNode>): DocumentNode {
+/**
+ * Walks a NodeList in block context: nested block elements get parsed
+ * standalone; inline content (text, mark tags, br, span) accumulates into a
+ * paragraph that's flushed when a block element appears (or at the end).
+ */
+function unwrapAsBlocks(childNodes: NodeListOf<ChildNode>, indent: number): BlockNode[] {
   const blocks: BlockNode[] = []
-  let pending = ''
+  let pending: InlineNode[] = []
 
-  function flushPending(): void {
-    if (pending === '') return
-    if (pending.trim() !== '' || blocks.length === 0) {
-      blocks.push({
-        id: generateId(),
-        type: 'paragraph',
-        children: [{ type: 'text', text: pending, marks: [] }],
-      })
+  function flush(): void {
+    if (pending.length === 0) return
+    const isBlank = pending.every((n) => n.type === 'text' && n.text.trim() === '')
+    if (!isBlank || blocks.length === 0) {
+      blocks.push({ id: generateId(), type: 'paragraph', children: pending })
     }
-    pending = ''
+    pending = []
   }
 
-  for (const child of childNodes) {
-    if (child.nodeType === Node.TEXT_NODE) {
-      pending += child.textContent ?? ''
-    } else if (child.nodeType === Node.ELEMENT_NODE) {
-      flushPending()
-      blocks.push(...parseBlock(child as Element))
+  for (const node of childNodes) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      const text = node.textContent ?? ''
+      if (text === '') continue
+      pending.push({ type: 'text', text, marks: [] })
+    } else if (node.nodeType === Node.ELEMENT_NODE) {
+      const tag = (node as Element).tagName.toLowerCase()
+      if (isInlineLikeTag(tag)) {
+        pending.push(...parseInline(node, []))
+      } else {
+        flush()
+        blocks.push(...parseBlock(node as Element, indent))
+      }
     }
   }
-  flushPending()
+  flush()
 
+  return blocks
+}
+
+function parseChildNodes(childNodes: NodeListOf<ChildNode>): DocumentNode {
+  const blocks = unwrapAsBlocks(childNodes, 0)
   if (blocks.length === 0) blocks.push(emptyParagraph())
   return { type: 'document', blocks }
 }
