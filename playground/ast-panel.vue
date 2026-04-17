@@ -27,7 +27,7 @@ const AstNode: FunctionalComponent<{
   depth: number
 }> = (props) => {
   const { node, depth } = props
-  const children: ReturnType<typeof h>[] = []
+  const children: (ReturnType<typeof h> | string)[] = []
 
   if (node.type === 'document') {
     children.push(h('span', { class: 'ast-document' }, `${indent(depth)}document\n`))

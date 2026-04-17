@@ -33,11 +33,14 @@ import {
   ListOrdered,
 } from '@lucide/vue'
 
-const props = defineProps<{
-  editor: EditorAPI | null
-  plugins: EddyPlugin[]
-  disabled: boolean
-}>()
+const props = withDefaults(
+  defineProps<{
+    editor: EditorAPI | null
+    plugins: EddyPlugin[]
+    disabled?: boolean
+  }>(),
+  { disabled: false },
+)
 
 const editorRef = toRef(props, 'editor')
 

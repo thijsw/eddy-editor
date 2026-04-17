@@ -5,7 +5,7 @@ import {
   applySchema,
   defaultRules,
 } from '../../src/ast/schema'
-import { doc, p, text, li, ul } from './helpers'
+import { doc, p, text, ul } from './helpers'
 
 describe('normalizeSiblingText', () => {
   it('merges adjacent text nodes with same marks', () => {

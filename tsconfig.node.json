@@ -5,7 +5,8 @@
     "moduleResolution": "bundler",
     "lib": ["ES2022"],
     "strict": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "types": ["node"]
   },
-  "include": ["vite.config.ts", "vite.playground.ts"]
+  "include": ["vite.config.ts", "vite.playground.ts", "vitest.config.ts", "playwright.config.ts"]
 }

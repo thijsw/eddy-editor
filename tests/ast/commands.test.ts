@@ -8,7 +8,7 @@ import {
   deleteContent,
   remapSelection,
 } from '../../src/ast/commands'
-import { doc, p, h, text, li, ul, ol, br, pos, cursor, range } from './helpers'
+import { doc, p, h, text, ul, br, pos, cursor, range } from './helpers'
 
 // ── toggleMark ────────────────────────────────────────────────────────────────
 

@@ -13,7 +13,16 @@
     "declaration": true,
     "declarationDir": "./dist",
     "jsx": "preserve",
-    "jsxImportSource": "vue"
+    "jsxImportSource": "vue",
+    "paths": {
+      "eddy-editor": ["./src/index.ts"]
+    }
   },
-  "include": ["src/**/*.ts", "src/**/*.vue"]
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.vue",
+    "tests/**/*.ts",
+    "playground/**/*.ts",
+    "playground/**/*.vue"
+  ]
 }

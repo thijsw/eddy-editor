@@ -4,7 +4,7 @@ import { test, expect, type Page } from '@playwright/test'
 
 /** Get the current v-model HTML from the output panel */
 async function getOutput(page: Page): Promise<string> {
-  return page.locator('pre.html-output').first().textContent() ?? ''
+  return (await page.locator('pre.html-output').first().textContent()) ?? ''
 }
 
 /** Click into the editor and select all existing content */

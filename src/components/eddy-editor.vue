@@ -1,6 +1,6 @@
 <template>
   <div class="eddy-wrapper">
-    <slot name="toolbar" :editor="api" :plugins="mergedPlugins" :disabled="disabled" />
+    <slot name="toolbar" :editor="api" :plugins="mergedPlugins" :disabled="!!disabled" />
 
     <div
       ref="editorEl"

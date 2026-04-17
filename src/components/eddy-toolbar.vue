@@ -34,11 +34,14 @@ import type { EditorAPI, EddyPlugin } from '../types'
 import { useEditorState } from '../use-editor-state'
 import { Bold, Italic, Underline, Strikethrough, List, ListOrdered } from '@lucide/vue'
 
-const props = defineProps<{
-  editor: EditorAPI | null
-  plugins: EddyPlugin[]
-  disabled: boolean
-}>()
+const props = withDefaults(
+  defineProps<{
+    editor: EditorAPI | null
+    plugins: EddyPlugin[]
+    disabled?: boolean
+  }>(),
+  { disabled: false },
+)
 
 const editorRef = toRef(props, 'editor')
 
