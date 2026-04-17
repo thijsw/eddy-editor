@@ -29,13 +29,13 @@ function parseInline(node: Node, marks: Mark[]): InlineNode[] {
     markType && !marks.some((m) => m.type === markType) ? [...marks, { type: markType }] : marks
 
   const result: InlineNode[] = []
-  for (const child of Array.from(node.childNodes)) result.push(...parseInline(child, childMarks))
+  for (const child of node.childNodes) result.push(...parseInline(child, childMarks))
   return result
 }
 
 function parseBlockChildren(el: Element): InlineNode[] {
   const children: InlineNode[] = []
-  for (const child of Array.from(el.childNodes)) children.push(...parseInline(child, []))
+  for (const child of el.childNodes) children.push(...parseInline(child, []))
   return children.length > 0 ? children : [emptyText()]
 }
 
@@ -67,12 +67,12 @@ function parseBlock(el: Element, indent = 0): BlockNode[] {
   if (tag === 'ul' || tag === 'ol') {
     const blocks: BlockNode[] = []
     const ordered = tag === 'ol'
-    for (const child of Array.from(el.children)) {
+    for (const child of el.children) {
       if (child.tagName.toLowerCase() !== 'li') continue
       const itemChildren: InlineNode[] = []
       const nestedBlocks: BlockNode[] = []
 
-      for (const node of Array.from(child.childNodes)) {
+      for (const node of child.childNodes) {
         const childTag =
           node.nodeType === Node.ELEMENT_NODE ? (node as Element).tagName.toLowerCase() : ''
         if (childTag === 'ul' || childTag === 'ol') {
@@ -116,7 +116,7 @@ function parseChildNodes(childNodes: NodeListOf<ChildNode>): DocumentNode {
     pending = ''
   }
 
-  for (const child of Array.from(childNodes)) {
+  for (const child of childNodes) {
     if (child.nodeType === Node.TEXT_NODE) {
       pending += child.textContent ?? ''
     } else if (child.nodeType === Node.ELEMENT_NODE) {

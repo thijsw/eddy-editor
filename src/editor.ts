@@ -165,11 +165,17 @@ export class Editor implements EditorAPI {
     this._selection = newSel
 
     if (canSurgicallyUpdate(oldDoc, newDoc)) {
+      // Single DOM scan beats N querySelector calls when many blocks changed
+      // (lists nest blocks inside <ul>/<ol>, so children iteration is unsafe).
+      const elementsById = new Map<string, Element>()
+      for (const el of this._el.querySelectorAll('[data-block-id]')) {
+        elementsById.set(el.getAttribute('data-block-id')!, el)
+      }
       for (let i = 0; i < newDoc.blocks.length; i++) {
         const oldBlock = oldDoc.blocks[i]
         const newBlock = newDoc.blocks[i]
         if (oldBlock === newBlock) continue
-        const blockEl = this._el.querySelector(`[data-block-id="${newBlock.id}"]`)
+        const blockEl = elementsById.get(newBlock.id)
         if (blockEl) blockEl.innerHTML = serializeBlockInner(newBlock)
       }
     } else {

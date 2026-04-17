@@ -22,7 +22,7 @@ function collect(node: Node, result: Node[]): void {
     result.push(node)
     return
   }
-  for (const child of Array.from(node.childNodes)) collect(child, result)
+  for (const child of node.childNodes) collect(child, result)
 }
 
 // ── DOM → AST position ────────────────────────────────────────────────────────

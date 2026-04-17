@@ -16,7 +16,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, useTemplateRef } from 'vue'
+import { computed, shallowRef, watch, onMounted, useTemplateRef } from 'vue'
 import { Editor } from '../editor'
 import { matchesKeybinding } from '../matches-keybinding'
 import { defaultPlugins } from '../plugins/index'
@@ -38,7 +38,9 @@ const emit = defineEmits<{
 }>()
 
 const editorEl = useTemplateRef('editorEl')
-const api = ref<EditorAPI | null>(null)
+// shallowRef: the Editor holds a deep AST. We never want Vue to wrap it in a
+// reactive proxy — the editor manages its own DOM and notifies via events.
+const api = shallowRef<EditorAPI | null>(null)
 let impl: Editor | null = null
 let isComposing = false
 // The last canonical HTML we emitted — used to ignore v-model echoes.

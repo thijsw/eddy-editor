@@ -8,7 +8,7 @@ A lightweight WYSIWYG text editor for Vue 3. AST-based, zero runtime dependencie
 
 - **AST document model** -- content is a typed tree, not raw HTML. Schema rules enforce valid structure (e.g. lists cannot nest inside paragraphs).
 - **No `execCommand`** -- all formatting uses modern Range/Selection APIs via pure AST transforms. No deprecated browser APIs.
-- **Zero runtime dependencies** -- Vue 3 is the only peer dependency. <!-- BUNDLE_SIZE -->**28.42 kB** min / **8.23 kB** gzip<!-- /BUNDLE_SIZE -->.
+- **Zero runtime dependencies** -- Vue 3 is the only peer dependency. <!-- BUNDLE_SIZE -->**28.59 kB** min / **8.31 kB** gzip<!-- /BUNDLE_SIZE -->.
 - **v-model binding** -- two-way HTML string binding. Set content programmatically, read it reactively.
 - **Plugin system** -- every feature (bold, headings, lists) is a plugin. Add custom plugins, override built-ins, or use only what you need.
 - **Full TypeScript API** -- typed commands (`toggleMark`, `setBlockType`, `toggleList`) and state inspection (`isMarkActive`, `getBlockType`, `getHeadingLevel`).

@@ -44,8 +44,8 @@ function mapBlocks(doc: DocumentNode, fn: (block: BlockNode) => BlockNode): Docu
 
 function marksEqual(a: Mark[], b: Mark[]): boolean {
   if (a.length !== b.length) return false
-  const types = new Set(a.map((m) => m.type))
-  return b.every((m) => types.has(m.type))
+  // Mark sets are tiny (0-4 entries), so nested some() beats Set allocation.
+  return a.every((m) => b.some((n) => n.type === m.type))
 }
 
 function mergeAdjacentTextNodes(nodes: InlineNode[]): InlineNode[] {
