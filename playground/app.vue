@@ -35,7 +35,9 @@ import { EddyEditor, EddyToolbar } from 'eddy-editor'
 import HtmlPanel from './html-panel.vue'
 import AstPanel from './ast-panel.vue'
 
-const content = ref('<p>Welcome to the <strong>Eddy</strong> editor playground. Try formatting this text!</p>')
+const content = ref(
+  '<p>Welcome to the <strong>Eddy</strong> editor playground. Try formatting this text!</p>',
+)
 const isDisabled = ref(false)
 </script>
 

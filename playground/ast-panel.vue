@@ -22,17 +22,24 @@ function indent(depth: number): string {
 }
 
 // Recursive functional component to render tree nodes
-const AstNode: FunctionalComponent<{ node: DocumentNode | BlockNode | InlineNode | ListItemNode; depth: number }> = (props) => {
+const AstNode: FunctionalComponent<{
+  node: DocumentNode | BlockNode | InlineNode | ListItemNode
+  depth: number
+}> = (props) => {
   const { node, depth } = props
   const children: ReturnType<typeof h>[] = []
 
   if (node.type === 'document') {
     children.push(h('span', { class: 'ast-document' }, `${indent(depth)}document\n`))
-    for (const child of node.children) {
+    for (const child of node.blocks) {
       children.push(h(AstNode, { node: child, depth: depth + 1 }))
     }
   } else if (node.type === 'paragraph') {
-    children.push(h('span', { class: 'ast-block' }, `${indent(depth)}paragraph\n`))
+    children.push(
+      h('span', { class: 'ast-block' }, `${indent(depth)}paragraph `),
+      h('span', { class: 'ast-id' }, `id=${node.id}`),
+      '\n',
+    )
     for (const child of node.children) {
       children.push(h(AstNode, { node: child, depth: depth + 1 }))
     }
@@ -40,22 +47,21 @@ const AstNode: FunctionalComponent<{ node: DocumentNode | BlockNode | InlineNode
     children.push(
       h('span', { class: 'ast-block' }, `${indent(depth)}heading `),
       h('span', { class: 'ast-prop' }, `level=${node.level}`),
+      ' ',
+      h('span', { class: 'ast-id' }, `id=${node.id}`),
       '\n',
     )
     for (const child of node.children) {
       children.push(h(AstNode, { node: child, depth: depth + 1 }))
     }
-  } else if (node.type === 'list') {
+  } else if (node.type === 'listItem') {
     children.push(
-      h('span', { class: 'ast-block' }, `${indent(depth)}list `),
-      h('span', { class: 'ast-prop' }, `ordered=${node.ordered}`),
+      h('span', { class: 'ast-block' }, `${indent(depth)}listItem `),
+      h('span', { class: 'ast-prop' }, `ordered=${node.ordered} indent=${node.indent}`),
+      ' ',
+      h('span', { class: 'ast-id' }, `id=${node.id}`),
       '\n',
     )
-    for (const item of node.items) {
-      children.push(h(AstNode, { node: item, depth: depth + 1 }))
-    }
-  } else if (node.type === 'listItem') {
-    children.push(h('span', { class: 'ast-block' }, `${indent(depth)}listItem\n`))
     for (const child of node.children) {
       children.push(h(AstNode, { node: child, depth: depth + 1 }))
     }
@@ -144,5 +150,10 @@ AstNode.props = ['node', 'depth']
 
 .ast-output :deep(.ast-prop) {
   color: #cba6f7;
+}
+
+.ast-output :deep(.ast-id) {
+  color: #94e2d5;
+  font-size: 0.75rem;
 }
 </style>

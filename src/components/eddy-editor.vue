@@ -1,10 +1,5 @@
 <template>
   <div class="eddy-wrapper">
-    <!--
-      #toolbar is a scoped slot so consumers can place <eddy-toolbar /> here.
-      eddy-toolbar uses inject() which requires it to be a descendant in the
-      Vue component tree — this slot satisfies that requirement.
-    -->
     <slot name="toolbar" :editor="api" :plugins="mergedPlugins" :disabled="disabled" />
 
     <div
@@ -27,9 +22,7 @@ import { matchesKeybinding } from '../matches-keybinding'
 import { defaultPlugins } from '../plugins/index'
 import type { EditorAPI, EddyPlugin } from '../types'
 import { parseHTML } from '../ast/parse'
-import { serializeToHTML } from '../ast/serialize'
-
-// ── Props & emits ─────────────────────────────────────────────────────────────
+import { serializeToHTML, serializeToDOMHTML } from '../ast/serialize'
 
 interface Props {
   modelValue: string
@@ -46,53 +39,47 @@ const emit = defineEmits<{
   'update:modelValue': [value: string]
 }>()
 
-// ── Refs ──────────────────────────────────────────────────────────────────────
-
 const editorEl = ref<HTMLElement | null>(null)
 const api = ref<EditorAPI | null>(null)
 let impl: EditorAPIImpl | null = null
 let isComposing = false
+// The last canonical HTML we emitted — used to detect parent echoes.
+let lastEmitted = ''
 
-// ── Plugin merging ────────────────────────────────────────────────────────────
-
-// Consumer plugins take priority: built-ins with the same name are removed.
+// Consumer plugins take priority: built-ins with the same name are dropped.
 const mergedPlugins = computed((): EddyPlugin[] => {
   const consumerNames = new Set(props.plugins.map((p) => p.name))
   const builtins = defaultPlugins.filter((p) => !consumerNames.has(p.name))
   return [...builtins, ...props.plugins]
 })
 
-// ── Lifecycle ─────────────────────────────────────────────────────────────────
+function emitCanonical(html?: string): void {
+  if (!impl) return
+  const value = html ?? serializeToHTML(impl.doc)
+  lastEmitted = value
+  emit('update:modelValue', value)
+}
 
 onMounted(() => {
   if (!editorEl.value) return
   const apiImpl = new EditorAPIImpl()
   apiImpl.attach(editorEl.value)
 
-  // Parse initial HTML into AST and initialise
-  editorEl.value.innerHTML = props.modelValue
   const initialDoc = parseHTML(props.modelValue)
   apiImpl.initDoc(initialDoc, null)
+  editorEl.value.innerHTML = serializeToDOMHTML(apiImpl.doc)
 
-  // Whenever a command modifies the doc, emit updated v-model.
-  // This is necessary because _renderDOM() sets innerHTML directly,
-  // which (unlike execCommand) does not fire a browser input event.
-  apiImpl.onChange(() => {
-    internalValue = serializeToHTML(apiImpl.doc)
-    emit('update:modelValue', internalValue)
-  })
+  apiImpl.onChange(() => emitCanonical())
 
-  if (props.disabled) {
-    editorEl.value.contentEditable = 'false'
-  }
+  if (props.disabled) editorEl.value.contentEditable = 'false'
 
   impl = apiImpl
   api.value = apiImpl
-  internalValue = props.modelValue
 
+  const canonical = serializeToHTML(apiImpl.doc)
+  lastEmitted = canonical
+  if (canonical !== props.modelValue) emit('update:modelValue', canonical)
 })
-
-// ── Disabled state ───────────────────────────────────────────────────────────
 
 // Set contenteditable imperatively to avoid Vue patching the attribute on
 // every re-render, which can reset the browser selection inside contenteditable.
@@ -105,32 +92,24 @@ watch(
   },
 )
 
-// ── Model sync ────────────────────────────────────────────────────────────────
-
-// Tracks the last HTML string we emitted so the watcher can distinguish
-// "parent echoing back what we just emitted" (skip DOM write) from
-// "parent programmatically setting a new value" (update DOM).
-let internalValue = props.modelValue
-
 watch(
   () => props.modelValue,
   (newVal) => {
-    if (newVal !== internalValue && editorEl.value && impl) {
-      editorEl.value.innerHTML = newVal
-      const doc = parseHTML(newVal)
-      impl.initDoc(doc, null)
-      internalValue = newVal
-    }
+    if (!editorEl.value || !impl) return
+    // Ignore echoes of the value we just emitted.
+    if (newVal === lastEmitted) return
+    const doc = parseHTML(newVal)
+    impl.initDoc(doc, null)
+    const canonical = serializeToHTML(impl.doc)
+    lastEmitted = canonical
+    editorEl.value.innerHTML = serializeToDOMHTML(impl.doc)
   },
 )
 
 function onInput(): void {
   if (!impl || isComposing) return
   const html = impl.syncFromDOM()
-  if (html !== null) {
-    internalValue = html
-    emit('update:modelValue', internalValue)
-  }
+  if (html !== null) emitCanonical(html)
 }
 
 function onCompositionStart(): void {
@@ -142,12 +121,9 @@ function onCompositionEnd(): void {
   onInput()
 }
 
-// ── Keyboard handling ─────────────────────────────────────────────────────────
-
 function onKeydown(event: KeyboardEvent): void {
   if (!api.value || !impl) return
 
-  // Undo / Redo
   if (matchesKeybinding(event, 'mod+z')) {
     event.preventDefault()
     impl.undo()
@@ -159,20 +135,18 @@ function onKeydown(event: KeyboardEvent): void {
     return
   }
 
-  // Enter key
   if (event.key === 'Enter' && !event.shiftKey) {
     event.preventDefault()
     impl.insertParagraph()
     return
   }
   if (event.key === 'Enter' && event.shiftKey) {
-    // Let the browser handle Shift+Enter natively — it inserts <br> and
-    // positions the cursor correctly.  The onInput handler syncs to AST.
+    // Browser handles Shift+Enter natively — <br> insertion and cursor
+    // placement. onInput() then re-syncs the AST.
     impl.pushHistory()
     return
   }
 
-  // Plugin keybindings
   for (const plugin of mergedPlugins.value) {
     if (plugin.keybinding && matchesKeybinding(event, plugin.keybinding)) {
       event.preventDefault()

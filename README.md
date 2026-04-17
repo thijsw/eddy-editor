@@ -8,7 +8,7 @@ A lightweight WYSIWYG text editor for Vue 3. AST-based, zero runtime dependencie
 
 - **AST document model** -- content is a typed tree, not raw HTML. Schema rules enforce valid structure (e.g. lists cannot nest inside paragraphs).
 - **No `execCommand`** -- all formatting uses modern Range/Selection APIs via pure AST transforms. No deprecated browser APIs.
-- **Zero runtime dependencies** -- Vue 3 is the only peer dependency. <!-- BUNDLE_SIZE -->**36.76 kB** min / **9.23 kB** gzip<!-- /BUNDLE_SIZE -->.
+- **Zero runtime dependencies** -- Vue 3 is the only peer dependency. <!-- BUNDLE_SIZE -->**28.76 kB** min / **8.30 kB** gzip<!-- /BUNDLE_SIZE -->.
 - **v-model binding** -- two-way HTML string binding. Set content programmatically, read it reactively.
 - **Plugin system** -- every feature (bold, headings, lists) is a plugin. Add custom plugins, override built-ins, or use only what you need.
 - **Full TypeScript API** -- typed commands (`toggleMark`, `setBlockType`, `toggleList`) and state inspection (`isMarkActive`, `getBlockType`, `getHeadingLevel`).
@@ -129,15 +129,15 @@ The `plugins` prop gives you the full merged plugin list (built-ins + any consum
 
 ## Keyboard shortcuts
 
-| Shortcut | Action |
-|---|---|
-| Mod+B | Bold |
-| Mod+I | Italic |
-| Mod+U | Underline |
-| Mod+Z | Undo |
-| Mod+Shift+Z | Redo |
-| Enter | New paragraph (exits headings into `<p>`) |
-| Shift+Enter | Line break (`<br>`) |
+| Shortcut    | Action                                    |
+| ----------- | ----------------------------------------- |
+| Mod+B       | Bold                                      |
+| Mod+I       | Italic                                    |
+| Mod+U       | Underline                                 |
+| Mod+Z       | Undo                                      |
+| Mod+Shift+Z | Redo                                      |
+| Enter       | New paragraph (exits headings into `<p>`) |
+| Shift+Enter | Line break (`<br>`)                       |
 
 "Mod" means Cmd on macOS, Ctrl on Windows/Linux.
 
@@ -194,15 +194,15 @@ const plugins = [bold, italic, heading1, heading2, unorderedList]
 
 ### Built-in plugins
 
-| Plugin | Export name | Keybinding |
-|---|---|---|
-| Bold | `bold` | Mod+B |
-| Italic | `italic` | Mod+I |
-| Underline | `underline` | Mod+U |
-| Strikethrough | `strikethrough` | |
-| Heading 1--6 | `heading1` ... `heading6` | |
-| Bullet list | `unorderedList` | |
-| Numbered list | `orderedList` | |
+| Plugin        | Export name               | Keybinding |
+| ------------- | ------------------------- | ---------- |
+| Bold          | `bold`                    | Mod+B      |
+| Italic        | `italic`                  | Mod+I      |
+| Underline     | `underline`               | Mod+U      |
+| Strikethrough | `strikethrough`           |            |
+| Heading 1--6  | `heading1` ... `heading6` |            |
+| Bullet list   | `unorderedList`           |            |
+| Numbered list | `orderedList`             |            |
 
 ## EditorAPI
 
@@ -210,29 +210,29 @@ The `api` object passed to plugin `command` and `isActive` callbacks:
 
 ### Commands
 
-| Method | Description |
-|---|---|
-| `toggleMark(mark)` | Toggle bold, italic, underline, or strikethrough |
+| Method                       | Description                                                              |
+| ---------------------------- | ------------------------------------------------------------------------ |
+| `toggleMark(mark)`           | Toggle bold, italic, underline, or strikethrough                         |
 | `setBlockType(type, attrs?)` | Set block to `'paragraph'` or `'heading'` with optional `{ level: 1-6 }` |
-| `toggleList(ordered)` | Toggle unordered (`false`) or ordered (`true`) list |
-| `insertParagraph()` | Insert a new paragraph (Enter key behaviour) |
-| `insertHardBreak()` | Insert a `<br>` line break (Shift+Enter behaviour) |
+| `toggleList(ordered)`        | Toggle unordered (`false`) or ordered (`true`) list                      |
+| `insertParagraph()`          | Insert a new paragraph (Enter key behaviour)                             |
+| `insertHardBreak()`          | Insert a `<br>` line break (Shift+Enter behaviour)                       |
 
 ### State inspection
 
-| Method | Returns | Description |
-|---|---|---|
-| `isMarkActive(mark)` | `boolean` | Whether the mark is active at the cursor or across the selection |
-| `getBlockType()` | `'paragraph' \| 'heading' \| 'list' \| 'mixed'` | Block type at the cursor |
-| `getHeadingLevel()` | `1-6 \| null` | Heading level, or `null` if not in a heading |
-| `getListType()` | `'ordered' \| 'unordered' \| null` | List type, or `null` if not in a list |
+| Method               | Returns                                         | Description                                                      |
+| -------------------- | ----------------------------------------------- | ---------------------------------------------------------------- |
+| `isMarkActive(mark)` | `boolean`                                       | Whether the mark is active at the cursor or across the selection |
+| `getBlockType()`     | `'paragraph' \| 'heading' \| 'list' \| 'mixed'` | Block type at the cursor                                         |
+| `getHeadingLevel()`  | `1-6 \| null`                                   | Heading level, or `null` if not in a heading                     |
+| `getListType()`      | `'ordered' \| 'unordered' \| null`              | List type, or `null` if not in a list                            |
 
 ### Properties
 
-| Property | Type | Description |
-|---|---|---|
-| `el` | `HTMLElement \| null` | The underlying `contenteditable` element |
-| `doc` | `DocumentNode` | The current AST document tree |
+| Property    | Type                   | Description                                   |
+| ----------- | ---------------------- | --------------------------------------------- |
+| `el`        | `HTMLElement \| null`  | The underlying `contenteditable` element      |
+| `doc`       | `DocumentNode`         | The current AST document tree                 |
 | `selection` | `ASTSelection \| null` | The current cursor/selection as AST positions |
 
 `MarkType` is `'bold' | 'italic' | 'underline' | 'strikethrough'`.
@@ -284,23 +284,23 @@ The full set of AST node types (`DocumentNode`, `BlockNode`, `InlineNode`, `Text
 
 ### `<eddy-editor>`
 
-| Prop | Type | Default | Description |
-|---|---|---|---|
-| `modelValue` | `string` | -- | HTML content (use with `v-model`) |
-| `plugins` | `EddyPlugin[]` | `[]` | Additional or replacement plugins |
-| `disabled` | `boolean` | `false` | Disables editing and toolbar controls |
+| Prop         | Type           | Default | Description                           |
+| ------------ | -------------- | ------- | ------------------------------------- |
+| `modelValue` | `string`       | --      | HTML content (use with `v-model`)     |
+| `plugins`    | `EddyPlugin[]` | `[]`    | Additional or replacement plugins     |
+| `disabled`   | `boolean`      | `false` | Disables editing and toolbar controls |
 
-| Slot | Slot props | Description |
-|---|---|---|
+| Slot      | Slot props                                                                | Description                     |
+| --------- | ------------------------------------------------------------------------- | ------------------------------- |
 | `toolbar` | `{ editor: EditorAPI \| null, plugins: EddyPlugin[], disabled: boolean }` | Rendered above the editing area |
 
 ### `<eddy-toolbar>`
 
-| Prop | Type | Description |
-|---|---|---|
-| `editor` | `EditorAPI \| null` | The editor API instance (from slot prop) |
-| `plugins` | `EddyPlugin[]` | Merged plugin list (from slot prop) |
-| `disabled` | `boolean` | Whether controls are disabled (from slot prop) |
+| Prop       | Type                | Description                                    |
+| ---------- | ------------------- | ---------------------------------------------- |
+| `editor`   | `EditorAPI \| null` | The editor API instance (from slot prop)       |
+| `plugins`  | `EddyPlugin[]`      | Merged plugin list (from slot prop)            |
+| `disabled` | `boolean`           | Whether controls are disabled (from slot prop) |
 
 ### `EddyPlugin`
 

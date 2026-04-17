@@ -44,4 +44,3 @@ export interface EddyPlugin {
   command(api: EditorAPI): void
   isActive?(api: EditorAPI): boolean
 }
-

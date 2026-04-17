@@ -32,14 +32,7 @@
 import { computed, toRef, type Component } from 'vue'
 import type { EditorAPI, EddyPlugin } from '../types'
 import { useEditorState } from '../use-editor-state'
-import {
-  Bold,
-  Italic,
-  Underline,
-  Strikethrough,
-  List,
-  ListOrdered,
-} from '@lucide/vue'
+import { Bold, Italic, Underline, Strikethrough, List, ListOrdered } from '@lucide/vue'
 
 const props = defineProps<{
   editor: EditorAPI | null

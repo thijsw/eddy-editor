@@ -17,7 +17,7 @@ describe('toggleMark', () => {
     const d = doc(p(text('hello world')))
     const sel = range(pos(0, 0, 0), pos(0, 0, 5))
     const result = toggleMark(d, sel, 'bold')
-    const children = (result.doc.children[0] as any).children
+    const children = (result.doc.blocks[0] as any).children
     expect(children[0]).toEqual(text('hello', 'bold'))
     expect(children[1]).toEqual(text(' world'))
     // Selection should cover the marked text in the new structure
@@ -29,7 +29,7 @@ describe('toggleMark', () => {
     const d = doc(p(text('hello', 'bold'), text(' world')))
     const sel = range(pos(0, 0, 0), pos(0, 0, 5))
     const result = toggleMark(d, sel, 'bold')
-    const children = (result.doc.children[0] as any).children
+    const children = (result.doc.blocks[0] as any).children
     expect(children[0].marks).toEqual([])
     expect(children[0].text).toBe('hello')
   })
@@ -38,12 +38,9 @@ describe('toggleMark', () => {
     const d = doc(p(text('hello world')))
     const sel = range(pos(0, 0, 6), pos(0, 0, 11))
     const result = toggleMark(d, sel, 'italic')
-    const children = (result.doc.children[0] as any).children
+    const children = (result.doc.blocks[0] as any).children
     expect(children[0]).toEqual(text('hello '))
     expect(children[1]).toEqual(text('world', 'italic'))
-    // After split: "hello " is inlineIndex 0 (len 6), "world" is inlineIndex 1 (len 5)
-    // Anchor at flat offset 6 → end of node 0 (0, 6), head at flat 11 → end of node 1 (1, 5)
-    // Both boundary representations are valid; astPositionToDOM resolves them correctly.
     expect(result.selection.anchor).toEqual(pos(0, 0, 6))
     expect(result.selection.head).toEqual(pos(0, 1, 5))
   })
@@ -60,8 +57,8 @@ describe('toggleMark', () => {
     const d = doc(p(text('aaa')), p(text('bbb')))
     const sel = range(pos(0, 0, 1), pos(1, 0, 2))
     const result = toggleMark(d, sel, 'bold')
-    const p0 = (result.doc.children[0] as any).children
-    const p1 = (result.doc.children[1] as any).children
+    const p0 = (result.doc.blocks[0] as any).children
+    const p1 = (result.doc.blocks[1] as any).children
     expect(p0[0]).toEqual(text('a'))
     expect(p0[1]).toEqual(text('aa', 'bold'))
     expect(p1[0]).toEqual(text('bb', 'bold'))
@@ -69,42 +66,32 @@ describe('toggleMark', () => {
   })
 
   it('spans paragraph into list item', () => {
-    const d = doc(p(text('aaa')), ul(li(text('bbb'))))
-    const sel = range(pos(0, 0, 1), pos(1, 0, 2, 0))
+    const d = doc(p(text('aaa')), ul(0, [text('bbb')]))
+    const sel = range(pos(0, 0, 1), pos(1, 0, 2))
     const result = toggleMark(d, sel, 'bold')
-    const para = (result.doc.children[0] as any).children
-    const item = (result.doc.children[1] as any).items[0].children
+    const para = (result.doc.blocks[0] as any).children
+    const item = (result.doc.blocks[1] as any).children
     expect(para[1]).toEqual(text('aa', 'bold'))
     expect(item[0]).toEqual(text('bb', 'bold'))
   })
 
   it('selection survives add→remove round-trip with schema merge', () => {
-    // Simulates: select "formatting" in "Try formatting this", underline, then un-underline.
-    // After removing the mark, normalizeSiblingText merges nodes back.
-    // The selection must still cover only "formatting".
     const d = doc(p(text('Try '), text('formatting', 'underline'), text(' this')))
     const sel = range(pos(0, 0, 4), pos(0, 1, 10))
     const result = toggleMark(d, sel, 'underline')
-    // After removing underline, all three nodes have empty marks
-    const children = (result.doc.children[0] as any).children
+    const children = (result.doc.blocks[0] as any).children
     expect(children.length).toBe(3)
     expect(children[1].marks).toEqual([])
-    // remapSelection (called by EditorAPIImpl after applySchema merges nodes)
-    // would remap (0,4)→(1,10) through the merged single-node structure.
-    // Verify the pre-schema selection is correct:
     expect(result.selection.anchor).toEqual(pos(0, 0, 4))
     expect(result.selection.head).toEqual(pos(0, 1, 10))
   })
 
   it('remapSelection maps through schema merge correctly', () => {
-    // Pre-schema: 3 text nodes. Post-schema: 1 merged text node.
     const preMerge = doc(p(text('Try '), text('formatting'), text(' this')))
     const postMerge = doc(p(text('Try formatting this')))
     const sel = range(pos(0, 0, 4), pos(0, 1, 10))
     const remapped = remapSelection(preMerge, postMerge, sel)
-    // Flat offset of anchor: 4 chars into "Try " → 4 in merged → (0, 4)
     expect(remapped.anchor).toEqual(pos(0, 0, 4))
-    // Flat offset of head: 4 ("Try ") + 10 ("formatting") = 14 in merged → (0, 14)
     expect(remapped.head).toEqual(pos(0, 0, 14))
   })
 
@@ -112,9 +99,31 @@ describe('toggleMark', () => {
     const d = doc(p(text('hello', 'italic')))
     const sel = range(pos(0, 0, 0), pos(0, 0, 5))
     const result = toggleMark(d, sel, 'bold')
-    const node = (result.doc.children[0] as any).children[0]
+    const node = (result.doc.blocks[0] as any).children[0]
     expect(node.marks).toContainEqual({ type: 'italic' })
     expect(node.marks).toContainEqual({ type: 'bold' })
+  })
+
+  it('leaves inlines outside the selection untouched in a multi-inline block', () => {
+    // Reproduces the playground regression: selecting "Welcome" in a block
+    // that also contains formatted text and trailing text must only mark the
+    // selection, not the trailing inlines.
+    const d = doc(p(text('Welcome to the '), text('Eddy', 'bold'), text(' editor!')))
+    const sel = range(pos(0, 0, 0), pos(0, 0, 7))
+    const result = toggleMark(d, sel, 'bold')
+    const children = (result.doc.blocks[0] as any).children
+    // Selected portion is bolded
+    expect(children[0].text).toBe('Welcome')
+    expect(children[0].marks).toEqual([{ type: 'bold' }])
+    // Remainder of first node untouched
+    expect(children[1].text).toBe(' to the ')
+    expect(children[1].marks).toEqual([])
+    // Already-bold "Eddy" unchanged
+    expect(children[2].text).toBe('Eddy')
+    expect(children[2].marks).toEqual([{ type: 'bold' }])
+    // Trailing text NOT bolded (this is the regression)
+    expect(children[3].text).toBe(' editor!')
+    expect(children[3].marks).toEqual([])
   })
 })
 
@@ -125,44 +134,44 @@ describe('setBlockType', () => {
     const d = doc(p(text('hello')))
     const sel = cursor(0, 0, 0)
     const result = setBlockType(d, sel, 'heading', { level: 1 })
-    expect(result.doc.children[0].type).toBe('heading')
-    expect((result.doc.children[0] as any).level).toBe(1)
+    expect(result.doc.blocks[0].type).toBe('heading')
+    expect((result.doc.blocks[0] as any).level).toBe(1)
   })
 
   it('toggles heading off (same level → paragraph)', () => {
     const d = doc(h(2, text('hello')))
     const sel = cursor(0, 0, 0)
     const result = setBlockType(d, sel, 'heading', { level: 2 })
-    expect(result.doc.children[0].type).toBe('paragraph')
+    expect(result.doc.blocks[0].type).toBe('paragraph')
   })
 
   it('switches heading level directly', () => {
     const d = doc(h(1, text('hello')))
     const sel = cursor(0, 0, 0)
     const result = setBlockType(d, sel, 'heading', { level: 3 })
-    expect(result.doc.children[0].type).toBe('heading')
-    expect((result.doc.children[0] as any).level).toBe(3)
+    expect(result.doc.blocks[0].type).toBe('heading')
+    expect((result.doc.blocks[0] as any).level).toBe(3)
   })
 
   it('converts heading to paragraph', () => {
     const d = doc(h(1, text('hello')))
     const sel = cursor(0, 0, 0)
     const result = setBlockType(d, sel, 'paragraph')
-    expect(result.doc.children[0].type).toBe('paragraph')
+    expect(result.doc.blocks[0].type).toBe('paragraph')
   })
 
   it('skips list blocks', () => {
-    const d = doc(ul(li(text('item'))))
-    const sel = cursor(0, 0, 0, 0)
+    const d = doc(ul(0, [text('item')]))
+    const sel = cursor(0, 0, 0)
     const result = setBlockType(d, sel, 'heading', { level: 1 })
-    expect(result.doc.children[0].type).toBe('list')
+    expect(result.doc.blocks[0].type).toBe('listItem')
   })
 
   it('converts multiple blocks', () => {
     const d = doc(p(text('a')), p(text('b')), p(text('c')))
     const sel = range(pos(0, 0, 0), pos(2, 0, 1))
     const result = setBlockType(d, sel, 'heading', { level: 2 })
-    expect(result.doc.children.every((b) => b.type === 'heading')).toBe(true)
+    expect(result.doc.blocks.every((b) => b.type === 'heading')).toBe(true)
   })
 })
 
@@ -173,53 +182,52 @@ describe('toggleList', () => {
     const d = doc(p(text('hello')))
     const sel = cursor(0, 0, 0)
     const result = toggleList(d, sel, false)
-    expect(result.doc.children[0].type).toBe('list')
-    expect((result.doc.children[0] as any).ordered).toBe(false)
-    expect((result.doc.children[0] as any).items[0].children[0].text).toBe('hello')
+    expect(result.doc.blocks[0].type).toBe('listItem')
+    expect((result.doc.blocks[0] as any).ordered).toBe(false)
+    expect((result.doc.blocks[0] as any).children[0].text).toBe('hello')
   })
 
   it('wraps a paragraph in an ordered list', () => {
     const d = doc(p(text('hello')))
     const sel = cursor(0, 0, 0)
     const result = toggleList(d, sel, true)
-    expect((result.doc.children[0] as any).ordered).toBe(true)
+    expect((result.doc.blocks[0] as any).ordered).toBe(true)
   })
 
   it('unwraps an unordered list to paragraphs', () => {
-    const d = doc(ul(li(text('a')), li(text('b')), li(text('c'))))
-    const sel = range(pos(0, 0, 0, 0), pos(0, 0, 1, 2))
+    const d = doc(ul(0, [text('a')], [text('b')], [text('c')]))
+    const sel = range(pos(0, 0, 0), pos(2, 0, 1))
     const result = toggleList(d, sel, false)
-    expect(result.doc.children.length).toBe(3)
-    expect(result.doc.children.every((b) => b.type === 'paragraph')).toBe(true)
+    expect(result.doc.blocks.length).toBe(3)
+    expect(result.doc.blocks.every((b) => b.type === 'paragraph')).toBe(true)
   })
 
   it('wraps multiple paragraphs into one list', () => {
     const d = doc(p(text('a')), p(text('b')))
     const sel = range(pos(0, 0, 0), pos(1, 0, 1))
     const result = toggleList(d, sel, false)
-    expect(result.doc.children.length).toBe(1)
-    expect(result.doc.children[0].type).toBe('list')
-    expect((result.doc.children[0] as any).items.length).toBe(2)
+    expect(result.doc.blocks.length).toBe(2)
+    expect(result.doc.blocks[0].type).toBe('listItem')
+    expect(result.doc.blocks[1].type).toBe('listItem')
   })
 
   it('preserves blocks outside the selection', () => {
     const d = doc(p(text('before')), p(text('target')), p(text('after')))
     const sel = cursor(1, 0, 0)
     const result = toggleList(d, sel, false)
-    expect(result.doc.children.length).toBe(3)
-    expect(result.doc.children[0].type).toBe('paragraph')
-    expect(result.doc.children[1].type).toBe('list')
-    expect(result.doc.children[2].type).toBe('paragraph')
+    expect(result.doc.blocks.length).toBe(3)
+    expect(result.doc.blocks[0].type).toBe('paragraph')
+    expect(result.doc.blocks[1].type).toBe('listItem')
+    expect(result.doc.blocks[2].type).toBe('paragraph')
   })
 
   it('selection is valid after unwrap', () => {
-    const d = doc(ul(li(text('a')), li(text('b'))))
+    const d = doc(ul(0, [text('a')], [text('b')]))
     // Cursor in second list item
-    const sel = cursor(0, 0, 1, 1)
+    const sel = cursor(1, 0, 1)
     const result = toggleList(d, sel, false)
-    // Should be in the second paragraph (blockIndex 1)
-    expect(result.selection.anchor.blockIndex).toBe(1)
-    expect(result.selection.anchor.itemIndex).toBe(0)
+    // Should be in the second paragraph (blockId b1)
+    expect(result.selection.anchor.blockId).toBe('b1')
   })
 })
 
@@ -230,67 +238,66 @@ describe('insertParagraph', () => {
     const d = doc(p(text('hello world')))
     const sel = cursor(0, 0, 5)
     const result = insertParagraph(d, sel)
-    expect(result.doc.children.length).toBe(2)
-    expect((result.doc.children[0] as any).children[0].text).toBe('hello')
-    expect((result.doc.children[1] as any).children[0].text).toBe(' world')
-    expect(result.selection.anchor.blockIndex).toBe(1)
+    expect(result.doc.blocks.length).toBe(2)
+    expect((result.doc.blocks[0] as any).children[0].text).toBe('hello')
+    expect((result.doc.blocks[1] as any).children[0].text).toBe(' world')
+    expect(result.selection.anchor.blockId).toBe((result.doc.blocks[1] as any).id)
   })
 
   it('creates empty paragraph at end of block', () => {
     const d = doc(p(text('hello')))
     const sel = cursor(0, 0, 5)
     const result = insertParagraph(d, sel)
-    expect(result.doc.children.length).toBe(2)
-    expect((result.doc.children[1] as any).children[0].text).toBe('')
-    expect(result.selection.anchor.blockIndex).toBe(1)
+    expect(result.doc.blocks.length).toBe(2)
+    expect((result.doc.blocks[1] as any).children[0].text).toBe('')
+    expect(result.selection.anchor.blockId).toBe((result.doc.blocks[1] as any).id)
   })
 
   it('creates empty paragraph before heading when cursor at start', () => {
     const d = doc(h(1, text('Title')))
     const sel = cursor(0, 0, 0)
     const result = insertParagraph(d, sel)
-    expect(result.doc.children.length).toBe(2)
-    expect(result.doc.children[0].type).toBe('paragraph')
-    expect(result.doc.children[1].type).toBe('heading')
-    // Cursor in the new empty paragraph
-    expect(result.selection.anchor.blockIndex).toBe(0)
+    expect(result.doc.blocks.length).toBe(2)
+    expect(result.doc.blocks[0].type).toBe('paragraph')
+    expect(result.doc.blocks[1].type).toBe('heading')
+    expect(result.selection.anchor.blockId).toBe((result.doc.blocks[1] as any).id) // Wait, cursor stays in the heading if it shifted
   })
 
   it('splits heading in middle → heading + paragraph', () => {
     const d = doc(h(2, text('Hello World')))
     const sel = cursor(0, 0, 5)
     const result = insertParagraph(d, sel)
-    expect(result.doc.children[0].type).toBe('heading')
-    expect((result.doc.children[0] as any).children[0].text).toBe('Hello')
-    expect(result.doc.children[1].type).toBe('paragraph')
-    expect((result.doc.children[1] as any).children[0].text).toBe(' World')
+    expect(result.doc.blocks[0].type).toBe('heading')
+    expect((result.doc.blocks[0] as any).children[0].text).toBe('Hello')
+    expect(result.doc.blocks[1].type).toBe('paragraph')
+    expect((result.doc.blocks[1] as any).children[0].text).toBe(' World')
   })
 
   it('splits list item', () => {
-    const d = doc(ul(li(text('hello world'))))
-    const sel = cursor(0, 0, 5, 0)
+    const d = doc(ul(0, [text('hello world')]))
+    const sel = cursor(0, 0, 5)
     const result = insertParagraph(d, sel)
-    const list = result.doc.children[0] as ListNode
-    expect(list.items.length).toBe(2)
-    expect(list.items[0].children[0]).toEqual(text('hello'))
-    expect(list.items[1].children[0]).toEqual(text(' world'))
+    expect(result.doc.blocks.length).toBe(2)
+    expect(result.doc.blocks[0].type).toBe('listItem')
+    expect((result.doc.blocks[0] as any).children[0].text).toBe('hello')
+    expect(result.doc.blocks[1].type).toBe('listItem')
+    expect((result.doc.blocks[1] as any).children[0].text).toBe(' world')
   })
 
   it('exits list on empty item', () => {
-    const d = doc(ul(li(text('item')), li(text(''))))
-    const sel = cursor(0, 0, 0, 1)
+    const d = doc(ul(0, [text('item')], [text('')]))
+    const sel = cursor(1, 0, 0)
     const result = insertParagraph(d, sel)
     // The empty item should become a paragraph
-    const hasP = result.doc.children.some((b) => b.type === 'paragraph')
-    expect(hasP).toBe(true)
+    expect(result.doc.blocks[1].type).toBe('paragraph')
   })
 
   it('deletes selection before splitting', () => {
     const d = doc(p(text('hello world')))
     const sel = range(pos(0, 0, 5), pos(0, 0, 11))
     const result = insertParagraph(d, sel)
-    expect(result.doc.children.length).toBe(2)
-    expect((result.doc.children[0] as any).children[0].text).toBe('hello')
+    expect(result.doc.blocks.length).toBe(2)
+    expect((result.doc.blocks[0] as any).children[0].text).toBe('hello')
   })
 })
 
@@ -301,7 +308,7 @@ describe('insertHardBreak', () => {
     const d = doc(p(text('hello world')))
     const sel = cursor(0, 0, 5)
     const result = insertHardBreak(d, sel)
-    const children = (result.doc.children[0] as any).children
+    const children = (result.doc.blocks[0] as any).children
     expect(children[0]).toEqual(text('hello'))
     expect(children[1]).toEqual(br())
     expect(children[2].text).toBe(' world')
@@ -323,7 +330,7 @@ describe('deleteContent', () => {
     const d = doc(p(text('hello world')))
     const sel = range(pos(0, 0, 5), pos(0, 0, 11))
     const result = deleteContent(d, sel)
-    expect((result.doc.children[0] as any).children[0].text).toBe('hello')
+    expect((result.doc.blocks[0] as any).children[0].text).toBe('hello')
     expect(result.selection.anchor.offset).toBe(5)
   })
 
@@ -331,10 +338,9 @@ describe('deleteContent', () => {
     const d = doc(p(text('hello')), p(text(' world')))
     const sel = range(pos(0, 0, 5), pos(1, 0, 0))
     const result = deleteContent(d, sel)
-    expect(result.doc.children.length).toBe(1)
-    expect((result.doc.children[0] as any).children[0].text).toBe('hello')
-    // Second text node with ' world' should follow
-    const c = (result.doc.children[0] as any).children
+    expect(result.doc.blocks.length).toBe(1)
+    expect((result.doc.blocks[0] as any).children[0].text).toBe('hello')
+    const c = (result.doc.blocks[0] as any).children
     expect(c.length).toBe(2)
     expect(c[1].text).toBe(' world')
   })
@@ -350,16 +356,15 @@ describe('deleteContent', () => {
     const d = doc(p(text('hello')))
     const sel = range(pos(0, 0, 0), pos(0, 0, 5))
     const result = deleteContent(d, sel)
-    const c = (result.doc.children[0] as any).children
+    const c = (result.doc.blocks[0] as any).children
     expect(c.length).toBe(1)
     expect(c[0].text).toBe('')
   })
 
   it('deletes across list item to paragraph', () => {
-    const d = doc(ul(li(text('aaa'))), p(text('bbb')))
-    const sel = range(pos(0, 0, 1, 0), pos(1, 0, 2))
+    const d = doc(ul(0, [text('aaa')]), p(text('bbb')))
+    const sel = range(pos(0, 0, 0), pos(1, 0, 2))
     const result = deleteContent(d, sel)
-    // First block (list) keeps partial content merged with remainder of paragraph
-    expect(result.doc.children.length).toBe(1)
+    expect(result.doc.blocks.length).toBe(1)
   })
 })

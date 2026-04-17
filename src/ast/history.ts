@@ -1,8 +1,6 @@
 import type { DocumentNode } from './types'
 import type { ASTSelection } from './selection'
 
-// ── History stack ─────────────────────────────────────────────────────────────
-
 export interface HistoryEntry {
   doc: DocumentNode
   selection: ASTSelection | null
@@ -13,9 +11,9 @@ export interface HistoryStack {
   pointer: number
 }
 
-export const MAX_HISTORY = 100
+const MAX_ENTRIES = 100
 
-export function createHistory(doc: DocumentNode, selection: ASTSelection | null): HistoryStack {
+export function create(doc: DocumentNode, selection: ASTSelection | null): HistoryStack {
   return { entries: [{ doc, selection }], pointer: 0 }
 }
 
@@ -24,16 +22,9 @@ export function push(
   doc: DocumentNode,
   selection: ASTSelection | null,
 ): HistoryStack {
-  // Drop any future entries beyond the current pointer (after an undo)
   const entries = stack.entries.slice(0, stack.pointer + 1)
   entries.push({ doc, selection })
-
-  // Trim to max size
-  if (entries.length > MAX_HISTORY) {
-    entries.shift()
-    return { entries, pointer: entries.length - 1 }
-  }
-
+  if (entries.length > MAX_ENTRIES) entries.shift()
   return { entries, pointer: entries.length - 1 }
 }
 

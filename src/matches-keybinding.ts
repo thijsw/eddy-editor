@@ -20,9 +20,7 @@ export function matchesKeybinding(event: KeyboardEvent, binding: string): boolea
 
   // "mod" means Cmd on Mac, Ctrl elsewhere. Accept either modifier key
   // so shortcuts work regardless of platform detection in headless browsers.
-  const modSatisfied = needsMod
-    ? event.metaKey || event.ctrlKey
-    : !event.metaKey && !event.ctrlKey
+  const modSatisfied = needsMod ? event.metaKey || event.ctrlKey : !event.metaKey && !event.ctrlKey
 
   return (
     event.key.toLowerCase() === key &&

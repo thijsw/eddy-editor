@@ -5,8 +5,8 @@
       <h1>Custom Toolbar Example</h1>
       <p class="playground-description">
         This example demonstrates how to build a custom toolbar using the
-        <code>EditorAPI</code> slot props.
-        All formatting options are rendered as individual buttons.
+        <code>EditorAPI</code> slot props. All formatting options are rendered as individual
+        buttons.
       </p>
     </header>
 
@@ -31,7 +31,9 @@ import { EddyEditor } from 'eddy-editor'
 import HtmlPanel from './html-panel.vue'
 import CustomToolbar from './custom-toolbar.vue'
 
-const content = ref('<p>This editor uses a <strong>custom toolbar</strong> where every option is a button.</p>')
+const content = ref(
+  '<p>This editor uses a <strong>custom toolbar</strong> where every option is a button.</p>',
+)
 </script>
 
 <style scoped>

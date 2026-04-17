@@ -4,7 +4,6 @@ import type {
   HeadingNode,
   InlineNode,
   ListItemNode,
-  ListNode,
   Mark,
   MarkType,
   ParagraphNode,
@@ -24,56 +23,53 @@ export function br(): InlineNode {
 
 export function p(...children: InlineNode[]): ParagraphNode {
   if (children.length === 0) children = [text('')]
-  return { type: 'paragraph', children }
+  return { id: '', type: 'paragraph', children }
 }
 
 export function h(level: 1 | 2 | 3 | 4 | 5 | 6, ...children: InlineNode[]): HeadingNode {
   if (children.length === 0) children = [text('')]
-  return { type: 'heading', level, children }
+  return { id: '', type: 'heading', level, children }
 }
 
-export function li(...children: InlineNode[]): ListItemNode {
+export function li(indent: number, ordered: boolean, ...children: InlineNode[]): ListItemNode {
   if (children.length === 0) children = [text('')]
-  return { type: 'listItem', children }
+  return { id: '', type: 'listItem', indent, ordered, children }
 }
 
-export function ul(...items: ListItemNode[]): ListNode {
-  return { type: 'list', ordered: false, items }
+/** Helper to create multiple list items easily */
+export function ul(indent: number, ...items: InlineNode[][]): ListItemNode[] {
+  return items.map((children) => li(indent, false, ...children))
 }
 
-export function ol(...items: ListItemNode[]): ListNode {
-  return { type: 'list', ordered: true, items }
+export function ol(indent: number, ...items: InlineNode[][]): ListItemNode[] {
+  return items.map((children) => li(indent, true, ...children))
 }
 
-export function doc(...children: BlockNode[]): DocumentNode {
-  return { type: 'document', children }
+export function doc(...args: (BlockNode | BlockNode[])[]): DocumentNode {
+  const blocks = args.flat()
+  blocks.forEach((b, i) => {
+    if (!b.id) b.id = `b${i}`
+  })
+  return { type: 'document', blocks }
 }
 
 // ── Selection builders ────────────────────────────────────────────────────────
 
-export function pos(
-  blockIndex: number,
-  inlineIndex: number,
-  offset: number,
-  itemIndex = 0,
-): ASTPosition {
-  return { blockIndex, itemIndex, inlineIndex, offset }
+export function pos(blockId: string | number, inlineIndex: number, offset: number): ASTPosition {
+  const id = typeof blockId === 'number' ? `b${blockId}` : blockId
+  return { blockId: id, inlineIndex, offset }
 }
 
 export function cursor(
-  blockIndex: number,
+  blockId: string | number,
   inlineIndex: number,
   offset: number,
-  itemIndex = 0,
 ): ASTSelection {
-  const p = pos(blockIndex, inlineIndex, offset, itemIndex)
+  const p = pos(blockId, inlineIndex, offset)
   return { anchor: p, head: p }
 }
 
-export function range(
-  anchor: ASTPosition,
-  head: ASTPosition,
-): ASTSelection {
+export function range(anchor: ASTPosition, head: ASTPosition): ASTSelection {
   return { anchor, head }
 }
 

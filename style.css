@@ -119,12 +119,24 @@
   line-height: 1.25;
 }
 
-.eddy-editor h1 { font-size: 2em; }
-.eddy-editor h2 { font-size: 1.5em; }
-.eddy-editor h3 { font-size: 1.25em; }
-.eddy-editor h4 { font-size: 1.125em; }
-.eddy-editor h5 { font-size: 1em; }
-.eddy-editor h6 { font-size: 0.875em; }
+.eddy-editor h1 {
+  font-size: 2em;
+}
+.eddy-editor h2 {
+  font-size: 1.5em;
+}
+.eddy-editor h3 {
+  font-size: 1.25em;
+}
+.eddy-editor h4 {
+  font-size: 1.125em;
+}
+.eddy-editor h5 {
+  font-size: 1em;
+}
+.eddy-editor h6 {
+  font-size: 0.875em;
+}
 
 .eddy-editor p {
   margin: 0.5em 0;

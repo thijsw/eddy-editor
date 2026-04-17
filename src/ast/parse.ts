@@ -1,17 +1,5 @@
-import type {
-  BlockNode,
-  DocumentNode,
-  HeadingNode,
-  InlineNode,
-  ListItemNode,
-  ListNode,
-  Mark,
-  MarkType,
-  ParagraphNode,
-  TextNode,
-} from './types'
-
-// ── Mark inference from DOM elements ─────────────────────────────────────────
+import type { BlockNode, DocumentNode, InlineNode, Mark, MarkType } from './types'
+import { generateId, emptyText, emptyParagraph } from './types'
 
 const MARK_TAGS: Record<string, MarkType> = {
   strong: 'bold',
@@ -24,147 +12,133 @@ const MARK_TAGS: Record<string, MarkType> = {
   del: 'strikethrough',
 }
 
-function tagToMark(tag: string): MarkType | null {
-  return MARK_TAGS[tag.toLowerCase()] ?? null
-}
-
 // ── Inline content parsing ────────────────────────────────────────────────────
 
-function parseInline(node: Node, inheritedMarks: Mark[]): InlineNode[] {
+function parseInline(node: Node, marks: Mark[]): InlineNode[] {
   if (node.nodeType === Node.TEXT_NODE) {
     const text = node.textContent ?? ''
-    if (text === '') return []
-    const textNode: TextNode = { type: 'text', text, marks: [...inheritedMarks] }
-    return [textNode]
+    return text === '' ? [] : [{ type: 'text', text, marks: [...marks] }]
   }
-
   if (node.nodeType !== Node.ELEMENT_NODE) return []
 
-  const el = node as Element
-  const tag = el.tagName.toLowerCase()
-
+  const tag = (node as Element).tagName.toLowerCase()
   if (tag === 'br') return [{ type: 'hardBreak' }]
 
-  // Collect marks contributed by this element
-  const mark = tagToMark(tag)
-  const childMarks: Mark[] = mark
-    ? addMark(inheritedMarks, { type: mark })
-    : inheritedMarks
+  const markType = MARK_TAGS[tag]
+  const childMarks =
+    markType && !marks.some((m) => m.type === markType) ? [...marks, { type: markType }] : marks
 
-  // For span (and other transparent inline wrappers), just recurse
   const result: InlineNode[] = []
-  const childNodes = Array.from(node.childNodes)
-  for (const child of childNodes) {
-    result.push(...parseInline(child, childMarks))
-  }
+  for (const child of Array.from(node.childNodes)) result.push(...parseInline(child, childMarks))
   return result
-}
-
-function addMark(marks: Mark[], mark: Mark): Mark[] {
-  if (marks.some((m) => m.type === mark.type)) return marks
-  return [...marks, mark]
 }
 
 function parseBlockChildren(el: Element): InlineNode[] {
   const children: InlineNode[] = []
-  const childNodes = Array.from(el.childNodes)
-  for (const child of childNodes) {
-    children.push(...parseInline(child, []))
-  }
-  return children.length > 0 ? children : [{ type: 'text', text: '', marks: [] }]
+  for (const child of Array.from(el.childNodes)) children.push(...parseInline(child, []))
+  return children.length > 0 ? children : [emptyText()]
 }
 
 // ── Block parsing ─────────────────────────────────────────────────────────────
 
-function parseBlock(el: Element): BlockNode[] {
+function blockId(el: Element): string {
+  return el.getAttribute('data-block-id') || generateId()
+}
+
+function parseBlock(el: Element, indent = 0): BlockNode[] {
   const tag = el.tagName.toLowerCase()
 
   if (tag === 'p' || tag === 'div') {
-    const para: ParagraphNode = { type: 'paragraph', children: parseBlockChildren(el) }
-    return [para]
+    return [{ id: blockId(el), type: 'paragraph', children: parseBlockChildren(el) }]
   }
 
   const headingMatch = /^h([1-6])$/.exec(tag)
   if (headingMatch) {
-    const level = Number(headingMatch[1]) as 1 | 2 | 3 | 4 | 5 | 6
-    const heading: HeadingNode = { type: 'heading', level, children: parseBlockChildren(el) }
-    return [heading]
+    return [
+      {
+        id: blockId(el),
+        type: 'heading',
+        level: Number(headingMatch[1]) as 1 | 2 | 3 | 4 | 5 | 6,
+        children: parseBlockChildren(el),
+      },
+    ]
   }
 
   if (tag === 'ul' || tag === 'ol') {
-    const items: ListItemNode[] = []
+    const blocks: BlockNode[] = []
+    const ordered = tag === 'ol'
     for (const child of Array.from(el.children)) {
-      if (child.tagName.toLowerCase() === 'li') {
-        items.push({ type: 'listItem', children: parseBlockChildren(child) })
+      if (child.tagName.toLowerCase() !== 'li') continue
+      const itemChildren: InlineNode[] = []
+      const nestedBlocks: BlockNode[] = []
+
+      for (const node of Array.from(child.childNodes)) {
+        const childTag =
+          node.nodeType === Node.ELEMENT_NODE ? (node as Element).tagName.toLowerCase() : ''
+        if (childTag === 'ul' || childTag === 'ol') {
+          nestedBlocks.push(...parseBlock(node as Element, indent + 1))
+        } else {
+          itemChildren.push(...parseInline(node, []))
+        }
       }
+
+      blocks.push({
+        id: blockId(child),
+        type: 'listItem',
+        ordered,
+        indent,
+        children: itemChildren.length > 0 ? itemChildren : [emptyText()],
+      })
+      blocks.push(...nestedBlocks)
     }
-    if (items.length === 0) return []
-    const list: ListNode = { type: 'list', ordered: tag === 'ol', items }
-    return [list]
+    return blocks
   }
 
-  // Unknown block element — promote children as a paragraph
-  const children = parseBlockChildren(el)
-  return [{ type: 'paragraph', children }]
+  // Unknown block element — promote children as a paragraph.
+  return [{ id: blockId(el), type: 'paragraph', children: parseBlockChildren(el) }]
 }
 
 // ── Document parsing ──────────────────────────────────────────────────────────
 
-/**
- * Walks child nodes of a container, grouping bare text nodes into paragraphs
- * and delegating element nodes to parseBlock().
- */
 function parseChildNodes(childNodes: NodeListOf<ChildNode>): DocumentNode {
   const blocks: BlockNode[] = []
-  let pendingTextNodes: Node[] = []
+  let pending = ''
 
-  function flushPendingText(): void {
-    if (pendingTextNodes.length === 0) return
-    const text = pendingTextNodes.map((n) => n.textContent ?? '').join('')
-    if (text.trim() !== '' || blocks.length === 0) {
-      blocks.push({ type: 'paragraph', children: [{ type: 'text', text, marks: [] }] })
+  function flushPending(): void {
+    if (pending === '') return
+    if (pending.trim() !== '' || blocks.length === 0) {
+      blocks.push({
+        id: generateId(),
+        type: 'paragraph',
+        children: [{ type: 'text', text: pending, marks: [] }],
+      })
     }
-    pendingTextNodes = []
+    pending = ''
   }
 
   for (const child of Array.from(childNodes)) {
     if (child.nodeType === Node.TEXT_NODE) {
-      pendingTextNodes.push(child)
-      continue
-    }
-    if (child.nodeType === Node.ELEMENT_NODE) {
-      flushPendingText()
+      pending += child.textContent ?? ''
+    } else if (child.nodeType === Node.ELEMENT_NODE) {
+      flushPending()
       blocks.push(...parseBlock(child as Element))
     }
   }
+  flushPending()
 
-  flushPendingText()
-
-  if (blocks.length === 0) {
-    blocks.push({ type: 'paragraph', children: [{ type: 'text', text: '', marks: [] }] })
-  }
-
-  return { type: 'document', children: blocks }
+  if (blocks.length === 0) blocks.push(emptyParagraph())
+  return { type: 'document', blocks }
 }
 
-/**
- * Parses an HTML string into a DocumentNode.
- * Uses the browser's own HTML parser (via innerHTML on a detached div).
- */
 export function parseHTML(html: string): DocumentNode {
   if (typeof document === 'undefined') {
-    return { type: 'document', children: [{ type: 'paragraph', children: [{ type: 'text', text: '', marks: [] }] }] }
+    return { type: 'document', blocks: [emptyParagraph()] }
   }
-
   const container = document.createElement('div')
   container.innerHTML = html
   return parseChildNodes(container.childNodes)
 }
 
-/**
- * Parses the live DOM of the editor element into a DocumentNode.
- * Equivalent to parseHTML(el.innerHTML) but avoids the innerHTML round-trip.
- */
 export function parseLiveDOM(el: HTMLElement): DocumentNode {
   return parseChildNodes(el.childNodes)
 }

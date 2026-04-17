@@ -26,28 +26,31 @@ async function clearAndType(page: Page, text: string) {
  * More reliable than double-click for targeting words in known text.
  */
 async function selectInEditor(page: Page, text: string) {
-  await page.locator('.eddy-editor').first().evaluate((el, searchText) => {
-    function findText(node: Node, str: string): { node: Text; offset: number } | null {
-      if (node.nodeType === Node.TEXT_NODE) {
-        const idx = (node.textContent ?? '').indexOf(str)
-        if (idx !== -1) return { node: node as Text, offset: idx }
+  await page
+    .locator('.eddy-editor')
+    .first()
+    .evaluate((el, searchText) => {
+      function findText(node: Node, str: string): { node: Text; offset: number } | null {
+        if (node.nodeType === Node.TEXT_NODE) {
+          const idx = (node.textContent ?? '').indexOf(str)
+          if (idx !== -1) return { node: node as Text, offset: idx }
+        }
+        for (const child of Array.from(node.childNodes)) {
+          const r = findText(child, str)
+          if (r) return r
+        }
+        return null
       }
-      for (const child of Array.from(node.childNodes)) {
-        const r = findText(child, str)
-        if (r) return r
-      }
-      return null
-    }
-    const found = findText(el, searchText)
-    if (!found) return
-    const range = document.createRange()
-    range.setStart(found.node, found.offset)
-    range.setEnd(found.node, found.offset + searchText.length)
-    const sel = window.getSelection()
-    sel?.removeAllRanges()
-    sel?.addRange(range)
-    el.focus()
-  }, text)
+      const found = findText(el, searchText)
+      if (!found) return
+      const range = document.createRange()
+      range.setStart(found.node, found.offset)
+      range.setEnd(found.node, found.offset + searchText.length)
+      const sel = window.getSelection()
+      sel?.removeAllRanges()
+      sel?.addRange(range)
+      el.focus()
+    }, text)
 }
 
 /**
@@ -55,29 +58,32 @@ async function selectInEditor(page: Page, text: string) {
  * which triggers selectionchange so the toolbar updates.
  */
 async function placeCursorIn(page: Page, text: string) {
-  await page.locator('.eddy-editor').first().evaluate((el, searchText) => {
-    function findText(node: Node, str: string): { node: Text; offset: number } | null {
-      if (node.nodeType === Node.TEXT_NODE) {
-        const idx = (node.textContent ?? '').indexOf(str)
-        if (idx !== -1) return { node: node as Text, offset: idx }
+  await page
+    .locator('.eddy-editor')
+    .first()
+    .evaluate((el, searchText) => {
+      function findText(node: Node, str: string): { node: Text; offset: number } | null {
+        if (node.nodeType === Node.TEXT_NODE) {
+          const idx = (node.textContent ?? '').indexOf(str)
+          if (idx !== -1) return { node: node as Text, offset: idx }
+        }
+        for (const child of Array.from(node.childNodes)) {
+          const r = findText(child, str)
+          if (r) return r
+        }
+        return null
       }
-      for (const child of Array.from(node.childNodes)) {
-        const r = findText(child, str)
-        if (r) return r
-      }
-      return null
-    }
-    const found = findText(el, searchText)
-    if (!found) return
-    const range = document.createRange()
-    // Place cursor in the middle of the found text
-    range.setStart(found.node, found.offset + Math.floor(searchText.length / 2))
-    range.collapse(true)
-    const sel = window.getSelection()
-    sel?.removeAllRanges()
-    sel?.addRange(range)
-    el.focus()
-  }, text)
+      const found = findText(el, searchText)
+      if (!found) return
+      const range = document.createRange()
+      // Place cursor in the middle of the found text
+      range.setStart(found.node, found.offset + Math.floor(searchText.length / 2))
+      range.collapse(true)
+      const sel = window.getSelection()
+      sel?.removeAllRanges()
+      sel?.addRange(range)
+      el.focus()
+    }, text)
 }
 
 // Toolbar button selectors — titles include the keybinding hint
@@ -174,7 +180,7 @@ test('heading: select converts block to h1', async ({ page }) => {
   await clearAndType(page, 'My heading')
   await selectBlockType(page, 'h1')
   const output = await getOutput(page)
-  expect(output).toContain('<h1>')
+  expect(output).toMatch(/<h1[^>]*>/)
 })
 
 test('heading: select toggles off (h1 → p)', async ({ page }) => {
@@ -183,7 +189,7 @@ test('heading: select toggles off (h1 → p)', async ({ page }) => {
   // Apply h1
   await selectBlockType(page, 'h1')
   let output = await getOutput(page)
-  expect(output).toContain('<h1>')
+  expect(output).toMatch(/<h1[^>]*>/)
 
   // Toggle off
   await selectBlockType(page, 'paragraph')
@@ -216,7 +222,7 @@ test('list: unordered list button creates ul > li', async ({ page }) => {
   await page.click(BTN.ul)
   const output = await getOutput(page)
   expect(output).toContain('<ul>')
-  expect(output).toContain('<li>')
+  expect(output).toMatch(/<li[^>]*>/)
   // <ul> must not be nested inside a <p> — invalid HTML
   expect(output).not.toMatch(/<p[^>]*>\s*<ul/)
 })
@@ -226,7 +232,7 @@ test('list: ordered list button creates ol > li', async ({ page }) => {
   await page.click(BTN.ol)
   const output = await getOutput(page)
   expect(output).toContain('<ol>')
-  expect(output).toContain('<li>')
+  expect(output).toMatch(/<li[^>]*>/)
   // <ol> must not be nested inside a <p> — invalid HTML
   expect(output).not.toMatch(/<p[^>]*>\s*<ol/)
 })
@@ -241,7 +247,9 @@ test('list: unordered list toggles off', async ({ page }) => {
 
 // ── Style hygiene ─────────────────────────────────────────────────────────────
 
-test('style hygiene: toggling unordered list off leaves no inline styles or bare spans', async ({ page }) => {
+test('style hygiene: toggling unordered list off leaves no inline styles or bare spans', async ({
+  page,
+}) => {
   await clearAndType(page, 'Some text')
   await page.click(BTN.ul)
   await page.click(BTN.ul)
@@ -250,7 +258,9 @@ test('style hygiene: toggling unordered list off leaves no inline styles or bare
   expect(output).not.toMatch(/<span>/)
 })
 
-test('style hygiene: toggling ordered list off leaves no inline styles or bare spans', async ({ page }) => {
+test('style hygiene: toggling ordered list off leaves no inline styles or bare spans', async ({
+  page,
+}) => {
   await clearAndType(page, 'Some text')
   await page.click(BTN.ol)
   await page.click(BTN.ol)
@@ -259,7 +269,9 @@ test('style hygiene: toggling ordered list off leaves no inline styles or bare s
   expect(output).not.toMatch(/<span>/)
 })
 
-test('style hygiene: toggling list off with mixed content (bold inline) leaves no inline styles or bare spans', async ({ page }) => {
+test('style hygiene: toggling list off with mixed content (bold inline) leaves no inline styles or bare spans', async ({
+  page,
+}) => {
   // Mirrors the reported bug: the playground's initial content contains <strong>Eddy</strong>
   // which caused Chromium to inject <span style="font-size: 16px"> when toggling the list off.
   await selectAll(page)
@@ -282,16 +294,18 @@ test('v-model: typing updates the HTML output panel', async ({ page }) => {
   expect(output).toContain('Hello world')
 })
 
-test('v-model: output panel matches editor innerHTML', async ({ page }) => {
+test('v-model: output is canonical HTML (no internal data-block-id attributes)', async ({
+  page,
+}) => {
   const editor = page.locator('.eddy-editor')
   await editor.click()
   await page.keyboard.press('Meta+A')
   await page.keyboard.press('Delete')
   await page.keyboard.type('Test content')
 
-  const editorHTML = await editor.evaluate((el) => el.innerHTML)
   const output = await getOutput(page)
-  expect(output.trim()).toBe(editorHTML.trim())
+  expect(output).not.toContain('data-block-id')
+  expect(output.trim()).toBe('<p>Test content</p>')
 })
 
 // ── Empty editor ──────────────────────────────────────────────────────────────
@@ -365,7 +379,9 @@ test('realistic: bold one word within a sentence, leaving the rest plain', async
   expect(output).toContain(' foo')
 })
 
-test('realistic: toolbar bold state tracks cursor moving between formatted and plain text', async ({ page }) => {
+test('realistic: toolbar bold state tracks cursor moving between formatted and plain text', async ({
+  page,
+}) => {
   const boldBtn = page.locator(BTN.bold)
   await clearAndType(page, 'Hello world')
   await selectInEditor(page, 'Hello')
@@ -380,7 +396,9 @@ test('realistic: toolbar bold state tracks cursor moving between formatted and p
   await expect(boldBtn).toHaveAttribute('aria-pressed', 'true')
 })
 
-test('realistic: build a document — heading then multiple paragraphs via Enter', async ({ page }) => {
+test('realistic: build a document — heading then multiple paragraphs via Enter', async ({
+  page,
+}) => {
   await clearAndType(page, 'Introduction')
   await selectBlockType(page, 'h1')
   // Enter exits heading → new paragraph
@@ -391,21 +409,23 @@ test('realistic: build a document — heading then multiple paragraphs via Enter
   await page.keyboard.type('Second paragraph.')
 
   const output = await getOutput(page)
-  expect(output).toContain('<h1>')
+  expect(output).toMatch(/<h1[^>]*>/)
   expect(output).toContain('Introduction')
   // Both paragraphs should be in separate <p> blocks, not inside the heading
   expect(output).toMatch(/<p>First paragraph\.<\/p>/)
   expect(output).toMatch(/<p>Second paragraph\.<\/p>/)
 })
 
-test('realistic: pressing Enter twice creates two empty paragraphs and cursor moves down', async ({ page }) => {
+test('realistic: pressing Enter twice creates two empty paragraphs and cursor moves down', async ({
+  page,
+}) => {
   await clearAndType(page, 'Top')
   await page.keyboard.press('Enter')
   await page.keyboard.press('Enter')
   await page.keyboard.type('Bottom')
   const output = await getOutput(page)
   // Should have: <p>Top</p> then an empty paragraph then <p>Bottom</p>
-  expect(output).toContain('<p>Top</p>')
+  expect(output).toMatch(/<p[^>]*>Top<\/p>/)
   expect(output).toContain('<p>Bottom</p>')
   // "Bottom" must not be in the same paragraph as "Top"
   expect(output).not.toContain('TopBottom')
@@ -509,7 +529,9 @@ test('realistic: Enter in the middle of a heading splits it correctly', async ({
   expect(output).toContain('World')
 })
 
-test('realistic: Enter at the beginning of a heading creates an empty paragraph before it', async ({ page }) => {
+test('realistic: Enter at the beginning of a heading creates an empty paragraph before it', async ({
+  page,
+}) => {
   await clearAndType(page, 'Hello World')
   await selectBlockType(page, 'h2')
   // Home key moves cursor to position 0 of the heading
@@ -610,4 +632,3 @@ test('realistic: formatting a word in the initial content (without clearing)', a
   expect(output).toContain('Try ')
   expect(output).toContain(' this text!')
 })
-
