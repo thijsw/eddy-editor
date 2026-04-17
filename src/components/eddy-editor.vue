@@ -16,8 +16,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted } from 'vue'
-import { EditorAPIImpl } from '../editor-api'
+import { ref, computed, watch, onMounted, useTemplateRef } from 'vue'
+import { Editor } from '../editor'
 import { matchesKeybinding } from '../matches-keybinding'
 import { defaultPlugins } from '../plugins/index'
 import type { EditorAPI, EddyPlugin } from '../types'
@@ -37,9 +37,9 @@ const emit = defineEmits<{
   'update:modelValue': [value: string]
 }>()
 
-const editorEl = ref<HTMLElement | null>(null)
+const editorEl = useTemplateRef('editorEl')
 const api = ref<EditorAPI | null>(null)
-let impl: EditorAPIImpl | null = null
+let impl: Editor | null = null
 let isComposing = false
 // The last canonical HTML we emitted — used to ignore v-model echoes.
 let lastEmitted = ''
@@ -59,7 +59,7 @@ function handleEmit(html: string): void {
 
 onMounted(() => {
   if (!editorEl.value) return
-  impl = new EditorAPIImpl(editorEl.value, handleEmit)
+  impl = new Editor(editorEl.value, handleEmit)
   impl.loadHTML(props.modelValue)
   if (props.disabled) editorEl.value.contentEditable = 'false'
   api.value = impl

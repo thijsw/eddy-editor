@@ -12,7 +12,7 @@ import * as history from './ast/history'
 
 type EmitFn = (html: string) => void
 
-export class EditorAPIImpl implements EditorAPI {
+export class Editor implements EditorAPI {
   private _doc: DocumentNode
   private _selection: ASTSelection | null = null
   private _history: history.HistoryStack
