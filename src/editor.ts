@@ -141,8 +141,11 @@ export class Editor implements EditorAPI {
     const oldDoc = this._doc
     const result = command(this._doc, this._selection)
     const normalized = applySchema(result.doc, defaultRules)
-    this._render(oldDoc, normalized, result.selection)
-    this._history = history.push(this._history, normalized, result.selection)
+    // Schema normalisation (e.g. merging adjacent text nodes with identical
+    // marks) can shift inline indices, so remap the selection across it.
+    const newSel = cmd.remapSelection(result.doc, normalized, result.selection)
+    this._render(oldDoc, normalized, newSel)
+    this._history = history.push(this._history, normalized, newSel)
     this._emitCanonical()
   }
 

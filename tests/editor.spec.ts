@@ -485,6 +485,34 @@ test('realistic: apply bold then italic to the same selection', async ({ page })
   expect(output).toContain('emphasis')
 })
 
+test('realistic: selection stays on the toggled word after bold round-trip (schema merge)', async ({
+  page,
+}) => {
+  // Repro: in the playground initial content, selecting bold "Eddy" and
+  // clicking Bold removes the mark, the schema merges adjacent text nodes,
+  // and the selection used to drift to the end of the line.
+  await selectInEditor(page, 'Eddy')
+  await page.click(BTN.bold)
+
+  const selectedText = await page.evaluate(() => window.getSelection()?.toString() ?? '')
+  expect(selectedText).toBe('Eddy')
+})
+
+test('realistic: selection stays on the toggled word after bold→unbold round-trip on plain text', async ({
+  page,
+}) => {
+  await clearAndType(page, 'Welcome to the world')
+  // Pick a middle word so a clamp-to-end bug would visibly extend the selection.
+  await selectInEditor(page, 'to')
+  await page.click(BTN.bold)
+  // After the second toggle, the three text nodes merge back into one
+  // — the selection must still cover only "to".
+  await page.click(BTN.bold)
+
+  const selectedText = await page.evaluate(() => window.getSelection()?.toString() ?? '')
+  expect(selectedText).toBe('to')
+})
+
 test('realistic: undo removes applied bold formatting', async ({ page }) => {
   await clearAndType(page, 'undo me')
   await selectInEditor(page, 'undo me')
