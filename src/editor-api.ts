@@ -2,7 +2,7 @@ import type { EditorAPI } from './types'
 import type { DocumentNode, MarkType } from './ast/types'
 import { emptyParagraph } from './ast/types'
 import type { ASTSelection } from './ast/selection'
-import { parseLiveDOM } from './ast/parse'
+import { parseHTML, parseLiveDOM } from './ast/parse'
 import { serializeToHTML, serializeToDOMHTML, serializeBlockInner } from './ast/serialize'
 import { readSelection, applySelection } from './ast/dom-mapping'
 import { applySchema, defaultRules } from './ast/schema'
@@ -10,15 +10,23 @@ import * as cmd from './ast/commands'
 import * as inspect from './ast/inspect'
 import * as history from './ast/history'
 
-export class EditorAPIImpl implements EditorAPI {
-  private _el: HTMLElement | null = null
-  private _doc: DocumentNode = { type: 'document', blocks: [emptyParagraph()] }
-  private _selection: ASTSelection | null = null
-  private _history = history.create(this._doc, null)
-  private _historyDebounce: ReturnType<typeof setTimeout> | null = null
-  private _onChange: (() => void) | null = null
+type EmitFn = (html: string) => void
 
-  get el(): HTMLElement | null {
+export class EditorAPIImpl implements EditorAPI {
+  private _doc: DocumentNode
+  private _selection: ASTSelection | null = null
+  private _history: history.HistoryStack
+  private _historyDebounce: ReturnType<typeof setTimeout> | null = null
+
+  constructor(
+    private readonly _el: HTMLElement,
+    private readonly _emit: EmitFn,
+  ) {
+    this._doc = { type: 'document', blocks: [emptyParagraph()] }
+    this._history = history.create(this._doc, null)
+  }
+
+  get el(): HTMLElement {
     return this._el
   }
 
@@ -30,35 +38,21 @@ export class EditorAPIImpl implements EditorAPI {
     return this._selection
   }
 
-  attach(el: HTMLElement): void {
-    this._el = el
+  /** Replace the document with fresh HTML. Used on init and v-model changes. */
+  loadHTML(html: string): void {
+    this._doc = applySchema(parseHTML(html), defaultRules)
+    this._selection = null
+    this._history = history.create(this._doc, null)
+    this._el.innerHTML = serializeToDOMHTML(this._doc)
+    this._emitCanonical()
   }
 
-  onChange(cb: () => void): void {
-    this._onChange = cb
-  }
-
-  initDoc(doc: DocumentNode, selection: ASTSelection | null): void {
-    this._doc = applySchema(doc, defaultRules)
-    this._selection = selection
-    this._history = history.create(this._doc, selection)
-  }
-
-  /**
-   * Called from the editor's input handler after the browser mutates the DOM.
-   * Re-parses the live DOM into the AST, normalises it, and returns the
-   * canonical HTML for v-model emission.
-   */
-  syncFromDOM(): string | null {
-    if (!this._el) return null
-
-    const parsed = parseLiveDOM(this._el)
-    this._doc = applySchema(parsed, defaultRules)
+  /** Called from the input handler after the browser mutates the DOM. */
+  syncFromDOM(): void {
+    this._doc = applySchema(parseLiveDOM(this._el), defaultRules)
     this._selection = readSelection(this._el)
-
     this._scheduleHistoryPush()
-    this._onChange?.()
-    return serializeToHTML(this._doc)
+    this._emitCanonical()
   }
 
   // ── Commands ──────────────────────────────────────────────────────────────
@@ -149,16 +143,19 @@ export class EditorAPIImpl implements EditorAPI {
     const normalized = applySchema(result.doc, defaultRules)
     this._render(oldDoc, normalized, result.selection)
     this._history = history.push(this._history, normalized, result.selection)
-    this._onChange?.()
+    this._emitCanonical()
   }
 
   private _restore(entry: history.HistoryEntry): void {
     this._render(this._doc, entry.doc, entry.selection)
-    this._onChange?.()
+    this._emitCanonical()
+  }
+
+  private _emitCanonical(): void {
+    this._emit(serializeToHTML(this._doc))
   }
 
   private _readSelectionFromDOM(): void {
-    if (!this._el) return
     const sel = readSelection(this._el)
     if (sel) this._selection = sel
   }
@@ -166,7 +163,6 @@ export class EditorAPIImpl implements EditorAPI {
   private _render(oldDoc: DocumentNode, newDoc: DocumentNode, newSel: ASTSelection | null): void {
     this._doc = newDoc
     this._selection = newSel
-    if (!this._el) return
 
     if (canSurgicallyUpdate(oldDoc, newDoc)) {
       for (let i = 0; i < newDoc.blocks.length; i++) {

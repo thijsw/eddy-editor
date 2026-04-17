@@ -9,7 +9,7 @@
       contenteditable="true"
       @input="onInput"
       @keydown="onKeydown"
-      @compositionstart="onCompositionStart"
+      @compositionstart="isComposing = true"
       @compositionend="onCompositionEnd"
     />
   </div>
@@ -21,8 +21,6 @@ import { EditorAPIImpl } from '../editor-api'
 import { matchesKeybinding } from '../matches-keybinding'
 import { defaultPlugins } from '../plugins/index'
 import type { EditorAPI, EddyPlugin } from '../types'
-import { parseHTML } from '../ast/parse'
-import { serializeToHTML, serializeToDOMHTML } from '../ast/serialize'
 
 interface Props {
   modelValue: string
@@ -43,7 +41,7 @@ const editorEl = ref<HTMLElement | null>(null)
 const api = ref<EditorAPI | null>(null)
 let impl: EditorAPIImpl | null = null
 let isComposing = false
-// The last canonical HTML we emitted — used to detect parent echoes.
+// The last canonical HTML we emitted — used to ignore v-model echoes.
 let lastEmitted = ''
 
 // Consumer plugins take priority: built-ins with the same name are dropped.
@@ -53,32 +51,18 @@ const mergedPlugins = computed((): EddyPlugin[] => {
   return [...builtins, ...props.plugins]
 })
 
-function emitCanonical(html?: string): void {
-  if (!impl) return
-  const value = html ?? serializeToHTML(impl.doc)
-  lastEmitted = value
-  emit('update:modelValue', value)
+function handleEmit(html: string): void {
+  if (html === lastEmitted) return
+  lastEmitted = html
+  emit('update:modelValue', html)
 }
 
 onMounted(() => {
   if (!editorEl.value) return
-  const apiImpl = new EditorAPIImpl()
-  apiImpl.attach(editorEl.value)
-
-  const initialDoc = parseHTML(props.modelValue)
-  apiImpl.initDoc(initialDoc, null)
-  editorEl.value.innerHTML = serializeToDOMHTML(apiImpl.doc)
-
-  apiImpl.onChange(() => emitCanonical())
-
+  impl = new EditorAPIImpl(editorEl.value, handleEmit)
+  impl.loadHTML(props.modelValue)
   if (props.disabled) editorEl.value.contentEditable = 'false'
-
-  impl = apiImpl
-  api.value = apiImpl
-
-  const canonical = serializeToHTML(apiImpl.doc)
-  lastEmitted = canonical
-  if (canonical !== props.modelValue) emit('update:modelValue', canonical)
+  api.value = impl
 })
 
 // Set contenteditable imperatively to avoid Vue patching the attribute on
@@ -95,25 +79,14 @@ watch(
 watch(
   () => props.modelValue,
   (newVal) => {
-    if (!editorEl.value || !impl) return
-    // Ignore echoes of the value we just emitted.
-    if (newVal === lastEmitted) return
-    const doc = parseHTML(newVal)
-    impl.initDoc(doc, null)
-    const canonical = serializeToHTML(impl.doc)
-    lastEmitted = canonical
-    editorEl.value.innerHTML = serializeToDOMHTML(impl.doc)
+    if (!impl || newVal === lastEmitted) return
+    impl.loadHTML(newVal)
   },
 )
 
 function onInput(): void {
   if (!impl || isComposing) return
-  const html = impl.syncFromDOM()
-  if (html !== null) emitCanonical(html)
-}
-
-function onCompositionStart(): void {
-  isComposing = true
+  impl.syncFromDOM()
 }
 
 function onCompositionEnd(): void {

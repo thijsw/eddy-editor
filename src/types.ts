@@ -3,7 +3,7 @@ import type { DocumentNode, MarkType } from './ast/types'
 import type { ASTSelection } from './ast/selection'
 
 export interface EditorAPI {
-  readonly el: HTMLElement | null
+  readonly el: HTMLElement
   readonly doc: DocumentNode
   readonly selection: ASTSelection | null
 
