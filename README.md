@@ -11,7 +11,7 @@ A lightweight WYSIWYG text editor for Vue 3. AST-based, zero runtime dependencie
 - **Zero runtime dependencies** -- Vue 3 is the only peer dependency. <!-- BUNDLE_SIZE -->**32.19 kB** min / **9.32 kB** gzip<!-- /BUNDLE_SIZE -->.
 - **v-model binding** -- two-way HTML string binding. Set content programmatically, read it reactively.
 - **Plugin system** -- every feature (bold, headings, lists) is a plugin. Add custom plugins, override built-ins, or use only what you need.
-- **Full TypeScript API** -- typed commands (`toggleMark`, `setBlockType`, `toggleList`) and state inspection (`isMarkActive`, `getBlockType`, `getHeadingLevel`).
+- **Full TypeScript API** -- typed commands (`toggleMark`, `setBlockType`, `toggleList`, `setLink`, `removeLink`) and state inspection (`isMarkActive`, `getBlockType`, `getHeadingLevel`, `getLinkHref`).
 - **Undo / Redo** -- built-in history stack with Mod+Z / Mod+Shift+Z.
 - **SSR-safe** -- no browser API access at module evaluation time.
 - **Themeable** -- all visual properties exposed as CSS custom properties.
@@ -44,7 +44,7 @@ const content = ref('<p>Hello world</p>')
 
 The `v-model` value is an HTML string. On first render the editor is seeded with that string; every edit emits an updated HTML string back.
 
-The default toolbar (bold, italic, underline, strikethrough, headings, lists) renders automatically. All built-in plugins are included unless you override them via the `plugins` prop.
+The default toolbar (bold, italic, underline, strikethrough, link, headings, lists) renders automatically. All built-in plugins are included unless you override them via the `plugins` prop.
 
 ## Custom toolbar
 
@@ -138,6 +138,7 @@ The `plugins` prop gives you the full merged plugin list (built-ins + any consum
 | Mod+B       | Bold                                      |
 | Mod+I       | Italic                                    |
 | Mod+U       | Underline                                 |
+| Mod+K       | Add / edit / remove link                  |
 | Mod+Z       | Undo                                      |
 | Mod+Shift+Z | Redo                                      |
 | Enter       | New paragraph (exits headings into `<p>`) |
@@ -200,9 +201,12 @@ const plugins = [bold, italic, heading1, heading2, unorderedList]
 | Italic        | `italic`                  | Mod+I      |
 | Underline     | `underline`               | Mod+U      |
 | Strikethrough | `strikethrough`           |            |
+| Link          | `link`                    | Mod+K      |
 | Heading 1--6  | `heading1` ... `heading6` |            |
 | Bullet list   | `unorderedList`           |            |
 | Numbered list | `orderedList`             |            |
+
+The link plugin uses `window.prompt` to collect the URL. When the cursor sits inside an existing link, the prompt is preloaded with the current `href`; an empty submission removes the link. Only `http:`, `https:`, `mailto:`, `tel:`, relative paths, and fragment URLs are accepted -- `javascript:` and other unsafe schemes are rejected on both input and parse.
 
 ## EditorAPI
 
@@ -210,13 +214,15 @@ The `api` object passed to plugin `command` and `isActive` callbacks:
 
 ### Commands
 
-| Method                       | Description                                                              |
-| ---------------------------- | ------------------------------------------------------------------------ |
-| `toggleMark(mark)`           | Toggle bold, italic, underline, or strikethrough                         |
-| `setBlockType(type, attrs?)` | Set block to `'paragraph'` or `'heading'` with optional `{ level: 1-6 }` |
-| `toggleList(ordered)`        | Toggle unordered (`false`) or ordered (`true`) list                      |
-| `insertParagraph()`          | Insert a new paragraph (Enter key behaviour)                             |
-| `insertHardBreak()`          | Insert a `<br>` line break (Shift+Enter behaviour)                       |
+| Method                       | Description                                                                         |
+| ---------------------------- | ----------------------------------------------------------------------------------- |
+| `toggleMark(mark)`           | Toggle bold, italic, underline, or strikethrough                                    |
+| `setBlockType(type, attrs?)` | Set block to `'paragraph'` or `'heading'` with optional `{ level: 1-6 }`            |
+| `toggleList(ordered)`        | Toggle unordered (`false`) or ordered (`true`) list                                 |
+| `setLink(href)`              | Apply a link to the selection (or update the link under a collapsed cursor)         |
+| `removeLink()`               | Remove the link mark from the selection or the link range under a collapsed cursor  |
+| `insertParagraph()`          | Insert a new paragraph (Enter key behaviour)                                        |
+| `insertHardBreak()`          | Insert a `<br>` line break (Shift+Enter behaviour)                                  |
 
 ### State inspection
 
@@ -226,6 +232,7 @@ The `api` object passed to plugin `command` and `isActive` callbacks:
 | `getBlockType()`     | `'paragraph' \| 'heading' \| 'list' \| 'mixed'` | Block type at the cursor                                         |
 | `getHeadingLevel()`  | `1-6 \| null`                                   | Heading level, or `null` if not in a heading                     |
 | `getListType()`      | `'ordered' \| 'unordered' \| null`              | List type, or `null` if not in a list                            |
+| `getLinkHref()`      | `string \| null`                                | The `href` of the link at the cursor, or `null` if not in a link |
 
 ### Properties
 
@@ -235,7 +242,7 @@ The `api` object passed to plugin `command` and `isActive` callbacks:
 | `doc`       | `DocumentNode`         | The current AST document tree                 |
 | `selection` | `ASTSelection \| null` | The current cursor/selection as AST positions |
 
-`MarkType` is `'bold' | 'italic' | 'underline' | 'strikethrough'`.
+`MarkType` is `'bold' | 'italic' | 'underline' | 'strikethrough' | 'link'`. The `link` mark carries an `attrs: { href }` object; other marks have no attributes.
 
 ## Styling
 
