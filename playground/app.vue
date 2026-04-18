@@ -9,17 +9,9 @@
         <h2 class="section-title">Editor</h2>
         <eddy-editor v-model="content" :disabled="isDisabled" />
         <label class="disabled-toggle">
-          <input type="checkbox" v-model="isDisabled" data-testid="toggle-disabled" />
+          <input type="checkbox" v-model="isDisabled" />
           Disabled
         </label>
-        <textarea
-          class="content-setter"
-          data-testid="content-setter"
-          :value="content"
-          rows="2"
-          placeholder="Paste HTML to load into the editor"
-          @change="content = ($event.target as HTMLTextAreaElement).value"
-        />
       </section>
 
       <html-panel :html="content" />
@@ -81,14 +73,5 @@ const isDisabled = ref(false)
   letter-spacing: 0.05em;
   color: #6b7280;
   margin: 0;
-}
-
-.content-setter {
-  font-family: ui-monospace, monospace;
-  font-size: 0.75rem;
-  padding: 0.375rem 0.5rem;
-  border: 1px solid #d1d5db;
-  border-radius: 0.25rem;
-  resize: vertical;
 }
 </style>

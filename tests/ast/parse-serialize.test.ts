@@ -171,10 +171,10 @@ describe('parseHTML — sanitisation', () => {
     expect(serializeToHTML(parseHTML('<strong>bold</strong>'))).toBe('<p><strong>bold</strong></p>')
   })
 
-  it('unwraps unknown inline-ish tags (e.g. <a>) preserving their text', () => {
-    expect(serializeToHTML(parseHTML('<p>see <a href="x">link</a> here</p>'))).toBe(
-      '<p>see link here</p>',
-    )
+  it('drops anchor wrappers whose href fails sanitization while keeping the text', () => {
+    expect(
+      serializeToHTML(parseHTML('<p>see <a href="javascript:alert(1)">link</a> here</p>')),
+    ).toBe('<p>see link here</p>')
   })
 
   it('parser output is idempotent — re-parsing canonical output yields the same HTML', () => {
