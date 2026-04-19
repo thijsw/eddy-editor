@@ -1,4 +1,3 @@
-import type { Component } from 'vue'
 import type { DocumentNode, MarkType } from './ast/types'
 import type { ASTSelection } from './ast/selection'
 
@@ -30,10 +29,12 @@ export interface ToolbarConfig {
   /** Tooltip text, e.g. "Bold (Mod+B)" */
   title: string
   /**
-   * Optional Vue component rendered as the button content (e.g. a `@lucide/vue` icon).
-   * When absent, `label` text is shown instead.
+   * Framework-specific component rendered as the button content. The Vue
+   * toolbar expects a Vue `Component`; the React toolbar expects a
+   * `ComponentType<{ size: number }>`. Typed as `unknown` here so this
+   * interface stays framework-agnostic.
    */
-  icon?: Component
+  icon?: unknown
 }
 
 export interface EddyPlugin {

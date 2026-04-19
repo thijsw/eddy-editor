@@ -3,7 +3,7 @@
   "version": "0.1.6",
   "type": "module",
   "packageManager": "pnpm@10.33.0",
-  "description": "A lightweight Vue 3 WYSIWYG text editor",
+  "description": "A lightweight WYSIWYG text editor for Vue and React",
   "license": "MIT",
   "author": "Thijs Wijnmaalen",
   "repository": {
@@ -14,6 +14,7 @@
   "bugs": "https://github.com/thijsw/eddy-editor/issues",
   "keywords": [
     "vue",
+    "react",
     "editor",
     "wysiwyg",
     "rich-text",
@@ -25,18 +26,27 @@
     "dist",
     "style.css"
   ],
-  "main": "./dist/eddy-editor.js",
-  "module": "./dist/eddy-editor.js",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "import": "./dist/eddy-editor.js",
+      "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
+    },
+    "./vue": {
+      "import": "./dist/vue.js",
+      "types": "./dist/vue.d.ts"
+    },
+    "./react": {
+      "import": "./dist/react.js",
+      "types": "./dist/react.d.ts"
     },
     "./style.css": "./style.css"
   },
   "scripts": {
     "dev": "vite --config vite.playground.ts",
+    "dev:react": "vite --config vite.playground.react.ts",
     "dev:lib": "vite build --watch",
     "build": "vue-tsc --noEmit && vite build",
     "typecheck": "vue-tsc --noEmit",
@@ -50,26 +60,38 @@
   },
   "peerDependencies": {
     "@lucide/vue": "^1.0.0",
+    "lucide-react": "^0.400.0",
+    "react": "^18.0.0 || ^19.0.0",
+    "react-dom": "^18.0.0 || ^19.0.0",
     "vue": "^3.0.0"
   },
   "peerDependenciesMeta": {
-    "@lucide/vue": {
-      "optional": true
-    }
+    "@lucide/vue": { "optional": true },
+    "lucide-react": { "optional": true },
+    "react": { "optional": true },
+    "react-dom": { "optional": true },
+    "vue": { "optional": true }
   },
   "devDependencies": {
     "@lucide/vue": "^1.8.0",
     "@types/node": "^25.6.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^5.0.0",
     "@vitejs/plugin-vue": "^6.0.0",
     "@vitest/browser": "^4.1.4",
     "@vitest/browser-playwright": "^4.1.4",
     "jsdom": "^29.0.2",
+    "lucide-react": "^0.468.0",
     "playwright": "^1.59.1",
     "prettier": "^3.8.3",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
     "typescript": "^5.8.3",
     "vite": "^8.0.0",
     "vite-plugin-dts": "^4.5.3",
     "vitest": "^4.1.4",
+    "vitest-browser-react": "^2.1.0",
     "vitest-browser-vue": "^2.1.0",
     "vue": "^3.5.13",
     "vue-tsc": "^2.2.10"

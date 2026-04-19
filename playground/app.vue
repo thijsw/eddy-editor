@@ -27,7 +27,7 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import { EddyEditor } from 'eddy-editor'
+import { EddyEditor } from 'eddy-editor/vue'
 import HtmlPanel from './html-panel.vue'
 import AstPanel from './ast-panel.vue'
 

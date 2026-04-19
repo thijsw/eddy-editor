@@ -31,7 +31,7 @@
 <script setup lang="ts">
 import { computed, toRef, type Component } from 'vue'
 import type { EditorAPI, EddyPlugin } from '../types'
-import { useEditorState } from '../use-editor-state'
+import { useEditorState } from './use-editor-state'
 import { Bold, Italic, Underline, Strikethrough, List, ListOrdered, Link } from '@lucide/vue'
 
 const props = withDefaults(
@@ -70,7 +70,7 @@ const defaultIcons: Record<string, Component> = {
 }
 
 function resolveIcon(plugin: EddyPlugin): Component | undefined {
-  return plugin.toolbar?.icon ?? defaultIcons[plugin.name]
+  return (plugin.toolbar?.icon as Component | undefined) ?? defaultIcons[plugin.name]
 }
 
 function onBlockTypeChange(event: Event): void {

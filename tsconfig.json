@@ -12,17 +12,23 @@
     "skipLibCheck": true,
     "declaration": true,
     "declarationDir": "./dist",
-    "jsx": "preserve",
-    "jsxImportSource": "vue",
+    "jsx": "react-jsx",
     "paths": {
-      "eddy-editor": ["./src/index.ts"]
+      "eddy-editor": ["./src/index.ts"],
+      "eddy-editor/vue": ["./src/vue/index.ts"],
+      "eddy-editor/react": ["./src/react/index.ts"]
     }
   },
   "include": [
     "src/**/*.ts",
+    "src/**/*.tsx",
     "src/**/*.vue",
     "tests/**/*.ts",
+    "tests/**/*.tsx",
+    "tests/**/*.vue",
     "playground/**/*.ts",
-    "playground/**/*.vue"
+    "playground/**/*.vue",
+    "playground-react/**/*.ts",
+    "playground-react/**/*.tsx"
   ]
 }

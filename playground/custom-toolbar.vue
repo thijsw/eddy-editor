@@ -17,7 +17,7 @@
 
 <script setup lang="ts">
 import { toRef, type Component } from 'vue'
-import { useEditorState, type EditorAPI, type EddyPlugin } from 'eddy-editor'
+import { useEditorState, type EditorAPI, type EddyPlugin } from 'eddy-editor/vue'
 import {
   Bold,
   Italic,

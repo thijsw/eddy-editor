@@ -1,13 +1,12 @@
 import { defineConfig } from 'vite'
-import vue from '@vitejs/plugin-vue'
+import react from '@vitejs/plugin-react'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
 export default defineConfig({
-  root: 'playground',
-  base: '/eddy-editor/',
+  root: 'playground-react',
   resolve: {
     alias: {
       'eddy-editor/vue': resolve(__dirname, 'src/vue/index.ts'),
@@ -15,12 +14,11 @@ export default defineConfig({
       'eddy-editor': resolve(__dirname, 'src/index.ts'),
     },
   },
-  plugins: [vue()],
+  plugins: [react()],
   build: {
     rollupOptions: {
       input: {
-        main: resolve(__dirname, 'playground/index.html'),
-        'custom-toolbar': resolve(__dirname, 'playground/custom-toolbar.html'),
+        main: resolve(__dirname, 'playground-react/index.html'),
       },
     },
   },

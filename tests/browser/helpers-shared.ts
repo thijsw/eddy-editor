@@ -1,8 +1,5 @@
-import { render } from 'vitest-browser-vue'
 import { page, userEvent } from 'vitest/browser'
 import { afterEach, vi } from 'vitest'
-import { nextTick } from 'vue'
-import Harness from './editor-harness.vue'
 
 export { page, userEvent }
 
@@ -16,57 +13,21 @@ export const BTN = {
   ol: 'Numbered list',
 }
 
-interface MountOptions {
+export interface MountOptions {
   disabled?: boolean
 }
 
-interface MountResult {
+export interface MountResult {
   getEmitted(): string
   setContent(html: string): Promise<void>
   setDisabled(disabled: boolean): Promise<void>
   unmount(): void
 }
 
-/**
- * Mounts <EddyEditor> inside a tiny wrapper component and returns handles for
- * reading the emitted v-model value and rerendering with new props. The
- * wrapper lives entirely inside the test — no playground involvement.
- */
-export async function mountEditor(initial: string, opts: MountOptions = {}): Promise<MountResult> {
-  let lastEmitted = initial
-  const onEmit = (v: string) => {
-    lastEmitted = v
-  }
-
-  const screen = render(Harness, {
-    props: { initial, disabled: opts.disabled ?? false, onEmit },
-  })
-
-  // Let onMounted + the sync update:modelValue emission flow settle before the
-  // test reads the emitted value.
-  await nextTick()
-  await tick()
-
-  return {
-    getEmitted: () => lastEmitted,
-    setContent: async (html) => {
-      screen.rerender({ initial: html, disabled: opts.disabled ?? false, onEmit })
-      await nextTick()
-      await tick()
-    },
-    setDisabled: async (disabled) => {
-      opts.disabled = disabled
-      screen.rerender({ initial, disabled, onEmit })
-      await nextTick()
-      await tick()
-    },
-    unmount: () => screen.unmount(),
-  }
-}
+export type MountFn = (initial: string, opts?: MountOptions) => Promise<MountResult>
 
 /**
  * Selects a text substring inside the editor using the Selection API.
- * Same strategy as the original Playwright helpers, just running in-browser.
  */
 export async function selectInEditor(searchText: string): Promise<void> {
   const editor = editorEl()
@@ -128,7 +89,6 @@ export function press(key: string): Promise<void> {
 
 /** Type plain text into the currently focused element. */
 export function type(text: string): Promise<void> {
-  // Escape the special tokens understood by userEvent.keyboard syntax.
   const escaped = text.replace(/[{[]/g, '$&$&')
   return userEvent.keyboard(escaped)
 }
@@ -164,7 +124,7 @@ function findText(node: Node, str: string): { node: Text; offset: number } | nul
   return null
 }
 
-function tick(): Promise<void> {
+export function tick(): Promise<void> {
   return new Promise((r) => setTimeout(r, 0))
 }
 

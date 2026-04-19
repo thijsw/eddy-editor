@@ -4,7 +4,7 @@
 
 <script setup lang="ts">
 import { ref, watch } from 'vue'
-import { EddyEditor } from '../../src/index'
+import { EddyEditor } from '../../src/vue/index'
 
 const props = defineProps<{ initial: string; disabled?: boolean }>()
 const emit = defineEmits<{ (e: 'emit', html: string): void }>()

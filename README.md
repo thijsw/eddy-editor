@@ -1,135 +1,28 @@
 # Eddy Editor
 
-A lightweight WYSIWYG text editor for Vue 3. AST-based, zero runtime dependencies, fully typed.
+A lightweight WYSIWYG text editor for Vue 3 and React. AST-based, zero runtime dependencies, fully typed.
 
 [Live demo](https://thijsw.github.io/eddy-editor/)
 
 ## Features
 
+- **Works with Vue and React** — framework-agnostic core, thin per-framework wrappers. Pick your import and go.
 - **AST document model** -- content is a typed tree, not raw HTML. Schema rules enforce valid structure (e.g. lists cannot nest inside paragraphs).
 - **No `execCommand`** -- all formatting uses modern Range/Selection APIs via pure AST transforms. No deprecated browser APIs.
-- **Zero runtime dependencies** -- Vue 3 is the only peer dependency. <!-- BUNDLE_SIZE -->**32.19 kB** min / **9.32 kB** gzip<!-- /BUNDLE_SIZE -->.
-- **v-model binding** -- two-way HTML string binding. Set content programmatically, read it reactively.
+- **Zero runtime dependencies** -- your UI framework is the only peer dependency. <!-- BUNDLE_SIZE -->**32.19 kB** min / **9.32 kB** gzip<!-- /BUNDLE_SIZE -->.
+- **Two-way binding** -- `v-model` in Vue, `value` + `onChange` in React. Set content programmatically, read it reactively.
 - **Plugin system** -- every feature (bold, headings, lists) is a plugin. Add custom plugins, override built-ins, or use only what you need.
 - **Full TypeScript API** -- typed commands (`toggleMark`, `setBlockType`, `toggleList`, `setLink`, `removeLink`) and state inspection (`isMarkActive`, `getBlockType`, `getHeadingLevel`, `getLinkHref`).
 - **Undo / Redo** -- built-in history stack with Mod+Z / Mod+Shift+Z.
 - **SSR-safe** -- no browser API access at module evaluation time.
 - **Themeable** -- all visual properties exposed as CSS custom properties.
 
-## Installation
+## Framework guides
 
-```bash
-npm install eddy-editor
-# or
-pnpm add eddy-editor
-```
+Eddy ships wrappers for Vue and React. Installation and code examples are split per framework:
 
-Vue 3 is a peer dependency. `@lucide/vue` is also required for the built-in toolbar's icons; if you render a fully custom toolbar, you can skip it.
-
-## Basic usage
-
-```vue
-<template>
-  <eddy-editor v-model="content" />
-</template>
-
-<script setup lang="ts">
-import { ref } from 'vue'
-import { EddyEditor } from 'eddy-editor'
-import 'eddy-editor/style.css'
-
-const content = ref('<p>Hello world</p>')
-</script>
-```
-
-The `v-model` value is an HTML string. On first render the editor is seeded with that string; every edit emits an updated HTML string back.
-
-The default toolbar (bold, italic, underline, strikethrough, link, headings, lists) renders automatically. All built-in plugins are included unless you override them via the `plugins` prop.
-
-## Custom toolbar
-
-The default toolbar renders automatically. Provide the `#toolbar` slot to replace it with your own.
-
-### Inline via scoped slot
-
-The `#toolbar` slot exposes the `EditorAPI` directly:
-
-```vue
-<template>
-  <eddy-editor v-model="content">
-    <template #toolbar="{ editor }">
-      <button @mousedown.prevent="editor?.toggleMark('bold')">Bold</button>
-      <button @mousedown.prevent="editor?.toggleMark('italic')">Italic</button>
-    </template>
-  </eddy-editor>
-</template>
-```
-
-`@mousedown.prevent` is important -- it stops the click from blurring the editor before the command runs.
-
-This works for simple cases, but the slot prop is not reactive to selection changes -- button active states won't update as the cursor moves.
-
-To render no toolbar at all, pass an empty template:
-
-```vue
-<eddy-editor v-model="content">
-  <template #toolbar />
-</eddy-editor>
-```
-
-### Custom toolbar component with reactive state
-
-For a toolbar that reflects the current formatting at the cursor, create a component that receives the slot props and uses the `useEditorState` composable:
-
-```vue
-<!-- MyToolbar.vue -->
-<template>
-  <div class="my-toolbar">
-    <button
-      :class="{ active: states.get('bold') }"
-      :aria-pressed="states.get('bold') ?? false"
-      @mousedown.prevent="editor?.toggleMark('bold')"
-    >
-      Bold
-    </button>
-    <button
-      :class="{ active: states.get('italic') }"
-      :aria-pressed="states.get('italic') ?? false"
-      @mousedown.prevent="editor?.toggleMark('italic')"
-    >
-      Italic
-    </button>
-  </div>
-</template>
-
-<script setup lang="ts">
-import { toRef } from 'vue'
-import { useEditorState, type EditorAPI, type EddyPlugin } from 'eddy-editor'
-
-const props = defineProps<{
-  editor: EditorAPI | null
-  plugins: EddyPlugin[]
-  disabled: boolean
-}>()
-
-// Reactive Map<string, boolean> — updates on every selectionchange and input event
-const states = useEditorState(toRef(props, 'editor'), props.plugins)
-</script>
-```
-
-Pass the slot props through to your component:
-
-```vue
-<eddy-editor v-model="content">
-  <template #toolbar="{ editor, plugins, disabled }">
-    <my-toolbar :editor="editor" :plugins="plugins" :disabled="disabled" />
-  </template>
-</eddy-editor>
-```
-
-`useEditorState` returns a reactive `Ref<Map<string, boolean>>` keyed by plugin name. It listens to `selectionchange` and `input` events, so your toolbar buttons stay in sync as the user moves the cursor between formatted and plain text.
-
-The `plugins` prop gives you the full merged plugin list (built-ins + any consumer plugins), so you can also iterate over plugins dynamically instead of hardcoding each button.
+- **Vue 3** — [docs/vue.md](docs/vue.md)
+- **React 18 / 19** — [docs/react.md](docs/react.md)
 
 ## Keyboard shortcuts
 
@@ -148,9 +41,7 @@ The `plugins` prop gives you the full merged plugin list (built-ins + any consum
 
 ## Plugin system
 
-Every feature in Eddy is a plugin. The full set of built-ins is loaded by default, but you can extend the editor with your own plugins or override any built-in by name.
-
-### Writing a plugin
+Every feature in Eddy is a plugin. The full set of built-ins is loaded by default, but you can extend the editor with your own plugins or override any built-in by name. Plugins are framework-agnostic — the same plugin file can be consumed by both the Vue and React toolbars.
 
 ```ts
 import { createPlugin } from 'eddy-editor'
@@ -171,29 +62,11 @@ const codePlugin = createPlugin({
 })
 ```
 
-### Using custom plugins
-
-Pass plugins via the `plugins` prop. Any plugin whose `name` matches a built-in replaces it; new names are appended. The default toolbar picks them up automatically.
-
-```vue
-<eddy-editor v-model="content" :plugins="[codePlugin]" />
-```
-
-### Using built-in plugins individually
-
-All built-in plugins are exported individually. Build a custom plugin list to control exactly which features are available:
-
-```ts
-import { bold, italic, heading1, heading2, unorderedList } from 'eddy-editor'
-
-const plugins = [bold, italic, heading1, heading2, unorderedList]
-```
-
-```vue
-<eddy-editor v-model="content" :plugins="plugins" />
-```
+Pass plugins via the `plugins` prop on the editor component. Any plugin whose `name` matches a built-in replaces it; new names are appended. See the framework guides for the exact prop syntax.
 
 ### Built-in plugins
+
+All built-in plugins are exported individually from `eddy-editor` so you can build a custom plugin list to control exactly which features are available:
 
 | Plugin        | Export name               | Keybinding |
 | ------------- | ------------------------- | ---------- |
@@ -210,7 +83,7 @@ The link plugin uses `window.prompt` to collect the URL. When the cursor sits in
 
 ## EditorAPI
 
-The `api` object passed to plugin `command` and `isActive` callbacks:
+The `api` object passed to plugin `command` and `isActive` callbacks — identical in both frameworks.
 
 ### Commands
 
@@ -275,7 +148,7 @@ Or skip the default stylesheet entirely and style `.eddy-wrapper`, `.eddy-toolba
 
 ## AST utilities
 
-The document model types and HTML conversion utilities are exported for server-side processing:
+The document model types and HTML conversion utilities are exported from the root package (no framework needed) for server-side processing:
 
 ```ts
 import { parseHTML, serializeToHTML } from 'eddy-editor'
@@ -287,47 +160,16 @@ const html: string = serializeToHTML(doc)
 
 The full set of AST node types (`DocumentNode`, `BlockNode`, `InlineNode`, `TextNode`, `Mark`, etc.) is exported as TypeScript types.
 
-## API reference
+## Package layout
 
-### `<eddy-editor>`
-
-| Prop         | Type           | Default | Description                           |
-| ------------ | -------------- | ------- | ------------------------------------- |
-| `modelValue` | `string`       | --      | HTML content (use with `v-model`)     |
-| `plugins`    | `EddyPlugin[]` | `[]`    | Additional or replacement plugins     |
-| `disabled`   | `boolean`      | `false` | Disables editing and toolbar controls |
-
-| Slot      | Slot props                                                                | Description                                                                                  |
-| --------- | ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| `toolbar` | `{ editor: EditorAPI \| null, plugins: EddyPlugin[], disabled: boolean }` | Rendered above the editing area. Falls back to the built-in `<eddy-toolbar>` when not given. |
-
-### `<eddy-toolbar>`
-
-| Prop       | Type                | Description                                    |
-| ---------- | ------------------- | ---------------------------------------------- |
-| `editor`   | `EditorAPI \| null` | The editor API instance (from slot prop)       |
-| `plugins`  | `EddyPlugin[]`      | Merged plugin list (from slot prop)            |
-| `disabled` | `boolean`           | Whether controls are disabled (from slot prop) |
-
-### `EddyPlugin`
-
-```ts
-interface EddyPlugin {
-  name: string
-  keybinding?: string
-  toolbar?: { label: string; title: string; icon?: Component }
-  command(api: EditorAPI): void
-  isActive?(api: EditorAPI): boolean
-}
+```
+eddy-editor            # framework-agnostic core: types, AST, plugins, createPlugin
+eddy-editor/vue        # Vue 3 components + useEditorState composable
+eddy-editor/react      # React components + useEditorState hook
+eddy-editor/style.css  # default stylesheet
 ```
 
-### `createPlugin(config)`
-
-Type-safe factory for authoring plugins. Returns the config unchanged; the value is in TypeScript inference.
-
-### `useEditorState(api, plugins)`
-
-Composable that returns a reactive `Ref<Map<string, boolean>>` of plugin active states. The `api` argument should be a `Ref<EditorAPI | null>` — use `toRef(props, 'editor')` to create one from a prop. Listens to `selectionchange` and `input` events so toolbar buttons stay in sync with the cursor position. Must be called inside a component's `setup` (requires lifecycle hooks).
+Peer dependencies are all optional — only install what you use. For Vue, install `vue` + `@lucide/vue`. For React, install `react`, `react-dom`, and `lucide-react`.
 
 ## License
 

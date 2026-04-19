@@ -1,10 +1,9 @@
-// Components
-export { default as EddyEditor } from './components/eddy-editor.vue'
-export { default as EddyToolbar } from './components/eddy-toolbar.vue'
+// Framework-agnostic core. For UI components use:
+//   import { EddyEditor } from 'eddy-editor/vue'
+//   import { EddyEditor } from 'eddy-editor/react'
 
-// Core utilities
+// Plugin authoring
 export { createPlugin } from './create-plugin'
-export { useEditorState } from './use-editor-state'
 
 // Built-in plugins — individual exports allow tree-shaking
 export {

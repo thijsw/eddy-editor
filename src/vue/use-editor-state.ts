@@ -1,5 +1,5 @@
 import { shallowRef, onMounted, onBeforeUnmount, type Ref } from 'vue'
-import type { EditorAPI, EddyPlugin } from './types'
+import type { EditorAPI, EddyPlugin } from '../types'
 
 /**
  * Returns a reactive Map of plugin name → isActive boolean.
