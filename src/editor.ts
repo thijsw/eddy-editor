@@ -1,11 +1,12 @@
 import type { EditorAPI } from './types'
 import type { DocumentNode, MarkType } from './ast/types'
-import { emptyParagraph } from './ast/types'
+import { emptyParagraph, emptyText, generateId } from './ast/types'
 import type { ASTSelection } from './ast/selection'
 import { parseHTML, parseLiveDOM } from './ast/parse'
 import { serializeToHTML, serializeToDOMHTML, serializeBlockInner } from './ast/serialize'
 import { readSelection, applySelection } from './ast/dom-mapping'
 import { applySchema, defaultRules } from './ast/schema'
+import { cleanPastedHTML } from './ast/clean-paste'
 import * as cmd from './ast/commands'
 import * as inspect from './ast/inspect'
 import * as history from './ast/history'
@@ -44,7 +45,24 @@ export class Editor implements EditorAPI {
     this._selection = null
     this._history = history.create(this._doc, null)
     this._el.innerHTML = serializeToDOMHTML(this._doc)
+    this._updateEmptyAttr()
     this._emitCanonical()
+  }
+
+  /**
+   * True when the document is a single paragraph with no typed text. The
+   * contenteditable `<p><br></p>` placeholder the browser inserts after
+   * select-all + delete counts as empty.
+   */
+  isEmpty(): boolean {
+    const { blocks } = this._doc
+    if (blocks.length !== 1) return false
+    const b = blocks[0]
+    if (b.type !== 'paragraph') return false
+    for (const node of b.children) {
+      if (node.type === 'text' && node.text !== '') return false
+    }
+    return true
   }
 
   /** Called from the input handler after the browser mutates the DOM. */
@@ -52,6 +70,7 @@ export class Editor implements EditorAPI {
     this._doc = applySchema(parseLiveDOM(this._el), defaultRules)
     this._selection = readSelection(this._el)
     this._scheduleHistoryPush()
+    this._updateEmptyAttr()
     this._emitCanonical()
   }
 
@@ -83,6 +102,28 @@ export class Editor implements EditorAPI {
 
   insertHardBreak(): void {
     this._apply((doc, sel) => cmd.insertHardBreak(doc, sel))
+  }
+
+  /** Clean pasted HTML and splice it into the doc at the cursor. */
+  insertHTML(html: string): void {
+    const cleaned = cleanPastedHTML(html)
+    if (cleaned.trim() === '') return
+    const inserted = parseHTML(cleaned)
+    if (inserted.blocks.length === 0) return
+    this._apply((doc, sel) => cmd.insertDocument(doc, sel, inserted))
+  }
+
+  /** Insert plain text at the cursor. Newlines become paragraph breaks. */
+  insertText(text: string): void {
+    if (text === '') return
+    const lines = text.split(/\r?\n/)
+    const blocks = lines.map((line) => ({
+      id: generateId(),
+      type: 'paragraph' as const,
+      children: line.length > 0 ? [{ type: 'text' as const, text: line, marks: [] }] : [emptyText()],
+    }))
+    const inserted: DocumentNode = { type: 'document', blocks }
+    this._apply((doc, sel) => cmd.insertDocument(doc, sel, inserted))
   }
 
   /**
@@ -176,6 +217,10 @@ export class Editor implements EditorAPI {
     if (sel) this._selection = sel
   }
 
+  private _updateEmptyAttr(): void {
+    this._el.toggleAttribute('data-empty', this.isEmpty())
+  }
+
   private _render(oldDoc: DocumentNode, newDoc: DocumentNode, newSel: ASTSelection | null): void {
     this._doc = newDoc
     this._selection = newSel
@@ -198,6 +243,7 @@ export class Editor implements EditorAPI {
       this._el.innerHTML = serializeToDOMHTML(newDoc)
     }
 
+    this._updateEmptyAttr()
     if (newSel) applySelection(this._el, newSel)
   }
 

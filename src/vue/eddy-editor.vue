@@ -8,9 +8,11 @@
       ref="editorEl"
       class="eddy-editor"
       :class="{ 'is-disabled': disabled }"
+      :data-placeholder="placeholder || null"
       contenteditable="true"
       @input="onInput"
       @keydown="onKeydown"
+      @paste="onPaste"
       @compositionstart="isComposing = true"
       @compositionend="onCompositionEnd"
     />
@@ -29,11 +31,13 @@ interface Props {
   modelValue: string
   plugins?: EddyPlugin[]
   disabled?: boolean
+  placeholder?: string
 }
 
 const props = withDefaults(defineProps<Props>(), {
   plugins: () => [],
   disabled: false,
+  placeholder: '',
 })
 
 const emit = defineEmits<{
@@ -92,6 +96,19 @@ watch(
 function onInput(): void {
   if (!impl || isComposing) return
   impl.syncFromDOM()
+}
+
+function onPaste(event: ClipboardEvent): void {
+  if (!impl) return
+  event.preventDefault()
+  const data = event.clipboardData
+  if (!data) return
+  const html = data.getData('text/html')
+  if (html) {
+    impl.insertHTML(html)
+  } else {
+    impl.insertText(data.getData('text/plain'))
+  }
 }
 
 function onCompositionEnd(): void {

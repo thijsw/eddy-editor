@@ -82,6 +82,7 @@
 }
 
 .eddy-editor {
+  position: relative;
   flex: 1;
   padding: var(--eddy-padding);
   min-height: var(--eddy-min-height);
@@ -91,6 +92,16 @@
   background: #fff;
   outline: none;
   overflow-y: auto;
+}
+
+.eddy-editor[data-empty][data-placeholder]::before {
+  content: attr(data-placeholder);
+  position: absolute;
+  inset: 0;
+  padding: inherit;
+  color: #9aa0a6;
+  pointer-events: none;
+  user-select: none;
 }
 
 .eddy-editor:focus {
@@ -166,4 +177,12 @@
   color: #2563eb;
   text-decoration: underline;
   cursor: text;
+}
+
+.eddy-editor code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.9em;
+  padding: 0.1em 0.3em;
+  background: #f3f4f6;
+  border-radius: 0.25rem;
 }

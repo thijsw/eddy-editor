@@ -12,6 +12,8 @@ export {
   italic,
   underline,
   strikethrough,
+  code,
+  link,
   unorderedList,
   orderedList,
   heading1,

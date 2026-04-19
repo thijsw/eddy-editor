@@ -102,6 +102,13 @@ describe('parseHTML', () => {
     expect(node.text).toBe('text')
     expect(node.marks).toEqual([])
   })
+
+  it('parses <code> as inline code mark', () => {
+    const doc = parseHTML('<p><code>x</code></p>')
+    const node = (doc.blocks[0] as any).children[0]
+    expect(node.text).toBe('x')
+    expect(node.marks).toContainEqual({ type: 'code' })
+  })
 })
 
 describe('parseHTML — sanitisation', () => {
@@ -221,6 +228,16 @@ describe('serializeToHTML', () => {
     const doc = parseHTML('<ul><li>a<ul><li>b</li></ul></li></ul>')
     expect(serializeToHTML(doc)).toBe('<ul><li>a</li><ul><li>b</li></ul></ul>')
   })
+
+  it('serializes code mark as <code>', () => {
+    const doc = parseHTML('<p><code>x</code></p>')
+    expect(serializeToHTML(doc)).toBe('<p><code>x</code></p>')
+  })
+
+  it('code nests inside bold in canonical order', () => {
+    const doc = parseHTML('<p><code><strong>x</strong></code></p>')
+    expect(serializeToHTML(doc)).toBe('<p><strong><code>x</code></strong></p>')
+  })
 })
 
 describe('round-trip: parse → serialize → parse', () => {
@@ -237,6 +254,8 @@ describe('round-trip: parse → serialize → parse', () => {
     '<p>a</p><p>b</p><p>c</p>',
     '<h2>Title</h2><p>Body</p><ul><li>item</li></ul>',
     '<ul><li>a</li><ul><li>b</li></ul></ul>',
+    '<p><code>snippet</code></p>',
+    '<p>use <code>Array.map</code> here</p>',
   ]
 
   for (const html of cases) {

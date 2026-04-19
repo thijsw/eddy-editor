@@ -7,6 +7,7 @@ import {
   mockPrompt,
   press,
   type,
+  tick,
   page,
   BTN,
   type MountFn,
@@ -70,6 +71,13 @@ export function defineEditorSuite(mount: MountFn): void {
     expect(getEmitted()).toMatch(/<(s|strike|del)>/)
   })
 
+  test('toolbar: code button wraps selected text in <code>', async () => {
+    const { getEmitted } = await mount(INITIAL_PLAYGROUND)
+    await selectAll()
+    await page.getByTitle(BTN.code).click()
+    expect(getEmitted()).toMatch(/<code>/)
+  })
+
   // ── Keyboard shortcuts ──────────────────────────────────────────────────────
 
   test('keybinding: Mod+B applies bold', async () => {
@@ -91,6 +99,13 @@ export function defineEditorSuite(mount: MountFn): void {
     await selectAll()
     await press('ControlOrMeta+u')
     expect(getEmitted()).toMatch(/<u>/)
+  })
+
+  test('keybinding: Mod+E applies inline code', async () => {
+    const { getEmitted } = await mount(INITIAL_PLAYGROUND)
+    await selectAll()
+    await press('ControlOrMeta+e')
+    expect(getEmitted()).toMatch(/<code>/)
   })
 
   // ── Heading toggle ──────────────────────────────────────────────────────────
@@ -642,5 +657,83 @@ export function defineEditorSuite(mount: MountFn): void {
     expect(output).toContain('Welcome to the')
     expect(output).toContain('Try ')
     expect(output).toContain(' this text!')
+  })
+
+  // ── Placeholder ─────────────────────────────────────────────────────────────
+
+  test('placeholder: shows when empty, hides while typing, reappears on empty', async () => {
+    await mount('', { placeholder: 'Write something…' })
+    const editor = document.querySelector('.eddy-editor') as HTMLElement
+    expect(editor.hasAttribute('data-empty')).toBe(true)
+    expect(editor.getAttribute('data-placeholder')).toBe('Write something…')
+
+    editor.focus()
+    await type('hi')
+    expect(editor.hasAttribute('data-empty')).toBe(false)
+
+    await selectAll()
+    await press('Delete')
+    expect(editor.hasAttribute('data-empty')).toBe(true)
+  })
+
+  test('placeholder: no data-empty when initial content is non-empty', async () => {
+    await mount('<p>hello</p>', { placeholder: 'Placeholder' })
+    const editor = document.querySelector('.eddy-editor') as HTMLElement
+    expect(editor.hasAttribute('data-empty')).toBe(false)
+  })
+
+  // ── Paste sanitization ──────────────────────────────────────────────────────
+
+  function dispatchPaste(html: string, text?: string): void {
+    const editor = document.querySelector('.eddy-editor') as HTMLElement
+    editor.focus()
+    const data = new DataTransfer()
+    data.setData('text/html', html)
+    if (text) data.setData('text/plain', text)
+    editor.dispatchEvent(
+      new ClipboardEvent('paste', {
+        clipboardData: data,
+        bubbles: true,
+        cancelable: true,
+      }),
+    )
+  }
+
+  test('paste: strips inline style/class from pasted HTML', async () => {
+    const { getEmitted } = await mount('<p>start</p>')
+    await placeCursorIn('start')
+    await press('End')
+    dispatchPaste(
+      '<p style="color:red" class="mso">pasted <strong style="x">text</strong></p>',
+    )
+    await tick()
+    const output = getEmitted()
+    expect(output).not.toContain('style=')
+    expect(output).not.toContain('class=')
+    expect(output).toContain('pasted')
+    expect(output).toMatch(/<strong>text<\/strong>/)
+  })
+
+  test('paste: drops <script> from pasted HTML', async () => {
+    const { getEmitted } = await mount('<p>start</p>')
+    await placeCursorIn('start')
+    await press('End')
+    dispatchPaste('<script>alert(1)</script><p> safe</p>')
+    await tick()
+    const output = getEmitted()
+    expect(output).not.toContain('<script')
+    expect(output).not.toContain('alert(1)')
+    expect(output).toContain(' safe')
+  })
+
+  test('paste: plain text fallback creates paragraphs on newlines', async () => {
+    const { getEmitted } = await mount('<p>hi</p>')
+    await placeCursorIn('hi')
+    await press('End')
+    dispatchPaste('', 'line one\nline two')
+    await tick()
+    const output = getEmitted()
+    expect(output).toContain('line one')
+    expect(output).toContain('line two')
   })
 }

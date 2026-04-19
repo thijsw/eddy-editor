@@ -11,6 +11,7 @@ const MARK_TAGS: Record<string, MarkType> = {
   s: 'strikethrough',
   strike: 'strikethrough',
   del: 'strikethrough',
+  code: 'code',
 }
 
 function isInlineLikeTag(tag: string): boolean {

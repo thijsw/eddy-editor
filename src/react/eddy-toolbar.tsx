@@ -1,5 +1,5 @@
 import { useMemo, type ComponentType, type MouseEvent, type ChangeEvent } from 'react'
-import { Bold, Italic, Underline, Strikethrough, List, ListOrdered, Link } from 'lucide-react'
+import { Bold, Italic, Underline, Strikethrough, Code, List, ListOrdered, Link } from 'lucide-react'
 import type { EditorAPI, EddyPlugin } from '../types'
 import { useEditorState } from './use-editor-state'
 
@@ -10,6 +10,7 @@ const defaultIcons: Record<string, IconComponent> = {
   italic: Italic,
   underline: Underline,
   strikethrough: Strikethrough,
+  code: Code,
   link: Link,
   unorderedList: List,
   orderedList: ListOrdered,

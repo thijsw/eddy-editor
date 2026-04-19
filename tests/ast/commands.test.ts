@@ -5,6 +5,7 @@ import {
   toggleList,
   insertParagraph,
   insertHardBreak,
+  insertDocument,
   deleteContent,
   remapSelection,
 } from '../../src/ast/commands'
@@ -32,6 +33,22 @@ describe('toggleMark', () => {
     const children = (result.doc.blocks[0] as any).children
     expect(children[0].marks).toEqual([])
     expect(children[0].text).toBe('hello')
+  })
+
+  it('adds code mark to a range', () => {
+    const d = doc(p(text('use Array.map here')))
+    const sel = range(pos(0, 0, 4), pos(0, 0, 13))
+    const result = toggleMark(d, sel, 'code')
+    const children = (result.doc.blocks[0] as any).children
+    expect(children[1]).toEqual(text('Array.map', 'code'))
+  })
+
+  it('code and bold can combine on the same range', () => {
+    const d = doc(p(text('hello', 'bold')))
+    const sel = range(pos(0, 0, 0), pos(0, 0, 5))
+    const result = toggleMark(d, sel, 'code')
+    const node = (result.doc.blocks[0] as any).children[0]
+    expect(node.marks).toEqual([{ type: 'bold' }, { type: 'code' }])
   })
 
   it('adds mark to partial text node and remaps selection', () => {
@@ -366,5 +383,52 @@ describe('deleteContent', () => {
     const sel = range(pos(0, 0, 0), pos(1, 0, 2))
     const result = deleteContent(d, sel)
     expect(result.doc.blocks.length).toBe(1)
+  })
+})
+
+// ── insertDocument ────────────────────────────────────────────────────────────
+
+describe('insertDocument', () => {
+  it('inserts a single-block paste inline at the cursor', () => {
+    const d = doc(p(text('hello world')))
+    const sel = cursor(0, 0, 6)
+    const inserted = doc(p(text('BIG ')))
+    const result = insertDocument(d, sel, inserted)
+    expect(result.doc.blocks.length).toBe(1)
+    const children = (result.doc.blocks[0] as any).children
+    expect(children.map((c: any) => c.text).join('')).toBe('hello BIG world')
+    expect(result.selection.anchor.offset).toBe(4)
+  })
+
+  it('preserves target block type when pasting a paragraph into a heading', () => {
+    const d = doc(h(1, text('Title')))
+    const sel = cursor(0, 0, 5)
+    const inserted = doc(p(text(' suffix')))
+    const result = insertDocument(d, sel, inserted)
+    expect(result.doc.blocks.length).toBe(1)
+    expect(result.doc.blocks[0].type).toBe('heading')
+  })
+
+  it('splits the cursor block across a multi-block paste', () => {
+    const d = doc(p(text('ABCDEF')))
+    const sel = cursor(0, 0, 3)
+    const inserted = doc(p(text('X')), p(text('Y')), p(text('Z')))
+    const result = insertDocument(d, sel, inserted)
+    expect(result.doc.blocks.length).toBe(3)
+    const blockTexts = result.doc.blocks.map(
+      (b: any) => b.children.map((c: any) => c.text || '').join(''),
+    )
+    expect(blockTexts[0]).toBe('ABCX')
+    expect(blockTexts[1]).toBe('Y')
+    expect(blockTexts[2]).toBe('ZDEF')
+  })
+
+  it('deletes the selection before inserting when range is non-collapsed', () => {
+    const d = doc(p(text('hello world')))
+    const sel = range(pos(0, 0, 6), pos(0, 0, 11))
+    const inserted = doc(p(text('everyone')))
+    const result = insertDocument(d, sel, inserted)
+    const children = (result.doc.blocks[0] as any).children
+    expect(children.map((c: any) => c.text).join('')).toBe('hello everyone')
   })
 })

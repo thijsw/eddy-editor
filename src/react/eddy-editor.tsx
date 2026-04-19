@@ -3,6 +3,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type ClipboardEvent,
   type KeyboardEvent,
   type ReactNode,
 } from 'react'
@@ -23,6 +24,7 @@ export interface EddyEditorProps {
   onChange?: (html: string) => void
   plugins?: EddyPlugin[]
   disabled?: boolean
+  placeholder?: string
   /**
    * Render function for a custom toolbar. Receives the current editor API,
    * merged plugins, and disabled flag. When omitted, the default
@@ -36,6 +38,7 @@ export function EddyEditor({
   onChange,
   plugins: consumerPlugins,
   disabled = false,
+  placeholder,
   renderToolbar,
 }: EddyEditorProps) {
   const editorEl = useRef<HTMLDivElement>(null)
@@ -104,6 +107,19 @@ export function EddyEditor({
     impl.syncFromDOM()
   }
 
+  function onPaste(event: ClipboardEvent<HTMLDivElement>): void {
+    const impl = implRef.current
+    if (!impl) return
+    event.preventDefault()
+    const data = event.clipboardData
+    const html = data.getData('text/html')
+    if (html) {
+      impl.insertHTML(html)
+    } else {
+      impl.insertText(data.getData('text/plain'))
+    }
+  }
+
   function onCompositionEnd(): void {
     isComposingRef.current = false
     onInput()
@@ -159,9 +175,11 @@ export function EddyEditor({
       <div
         ref={editorEl}
         className={`eddy-editor${disabled ? ' is-disabled' : ''}`}
+        data-placeholder={placeholder || undefined}
         suppressContentEditableWarning
         onInput={onInput}
         onKeyDown={onKeyDown}
+        onPaste={onPaste}
         onCompositionStart={() => {
           isComposingRef.current = true
         }}

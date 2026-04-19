@@ -15,9 +15,15 @@ export const mountEditor: MountFn = async (
 
   let currentDisabled = opts.disabled ?? false
   let currentInitial = initial
+  const placeholder = opts.placeholder ?? ''
 
   const screen = await render(
-    createElement(Harness, { initial: currentInitial, disabled: currentDisabled, onEmit }),
+    createElement(Harness, {
+      initial: currentInitial,
+      disabled: currentDisabled,
+      placeholder,
+      onEmit,
+    }),
   )
 
   // Let the Editor's initial mount emission flow settle before the test reads.
@@ -29,7 +35,12 @@ export const mountEditor: MountFn = async (
     setContent: async (html) => {
       currentInitial = html
       await screen.rerender(
-        createElement(Harness, { initial: currentInitial, disabled: currentDisabled, onEmit }),
+        createElement(Harness, {
+          initial: currentInitial,
+          disabled: currentDisabled,
+          placeholder,
+          onEmit,
+        }),
       )
       await tick()
       await tick()
@@ -37,7 +48,12 @@ export const mountEditor: MountFn = async (
     setDisabled: async (disabled) => {
       currentDisabled = disabled
       await screen.rerender(
-        createElement(Harness, { initial: currentInitial, disabled: currentDisabled, onEmit }),
+        createElement(Harness, {
+          initial: currentInitial,
+          disabled: currentDisabled,
+          placeholder,
+          onEmit,
+        }),
       )
       await tick()
       await tick()

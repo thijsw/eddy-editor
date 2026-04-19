@@ -7,7 +7,11 @@
     <main class="playground-main">
       <section class="demo-section">
         <h2 class="section-title">Editor</h2>
-        <eddy-editor v-model="content" :disabled="isDisabled" />
+        <eddy-editor
+          v-model="content"
+          :disabled="isDisabled"
+          placeholder="Start typing to see the placeholder disappear…"
+        />
         <label class="disabled-toggle">
           <input type="checkbox" v-model="isDisabled" />
           Disabled

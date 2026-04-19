@@ -6,10 +6,11 @@ const MARK_TO_TAG: Record<MarkType, string> = {
   italic: 'em',
   underline: 'u',
   strikethrough: 's',
+  code: 'code',
 }
 
-// Canonical mark order: link wraps bold wraps italic wraps underline wraps strikethrough.
-const MARK_ORDER: MarkType[] = ['link', 'bold', 'italic', 'underline', 'strikethrough']
+// Canonical mark order: link wraps bold wraps italic wraps underline wraps strikethrough wraps code.
+const MARK_ORDER: MarkType[] = ['link', 'bold', 'italic', 'underline', 'strikethrough', 'code']
 
 function serializeInline(node: InlineNode): string {
   if (node.type === 'hardBreak') return '<br>'

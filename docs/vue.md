@@ -155,11 +155,12 @@ const plugins = [bold, italic, heading1, heading2, unorderedList]
 
 ### `<eddy-editor>` props
 
-| Prop         | Type           | Default | Description                           |
-| ------------ | -------------- | ------- | ------------------------------------- |
-| `modelValue` | `string`       | --      | HTML content (use with `v-model`)     |
-| `plugins`    | `EddyPlugin[]` | `[]`    | Additional or replacement plugins     |
-| `disabled`   | `boolean`      | `false` | Disables editing and toolbar controls |
+| Prop          | Type           | Default | Description                                                           |
+| ------------- | -------------- | ------- | --------------------------------------------------------------------- |
+| `modelValue`  | `string`       | --      | HTML content (use with `v-model`)                                     |
+| `plugins`     | `EddyPlugin[]` | `[]`    | Additional or replacement plugins                                     |
+| `disabled`    | `boolean`      | `false` | Disables editing and toolbar controls                                 |
+| `placeholder` | `string`       | `''`    | Hint shown when the editor is empty. Hidden as soon as the user types |
 
 | Slot      | Slot props                                                                | Description                                                                                  |
 | --------- | ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |

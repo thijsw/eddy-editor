@@ -18,7 +18,12 @@ export function App() {
       <main className="playground-main">
         <section className="demo-section">
           <h2 className="section-title">Editor</h2>
-          <EddyEditor value={content} onChange={setContent} disabled={isDisabled} />
+          <EddyEditor
+            value={content}
+            onChange={setContent}
+            disabled={isDisabled}
+            placeholder="Start typing to see the placeholder disappear…"
+          />
           <label className="disabled-toggle">
             <input
               type="checkbox"

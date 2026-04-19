@@ -1,6 +1,6 @@
 // ── Mark types ────────────────────────────────────────────────────────────────
 
-export type MarkType = 'bold' | 'italic' | 'underline' | 'strikethrough' | 'link'
+export type MarkType = 'bold' | 'italic' | 'underline' | 'strikethrough' | 'link' | 'code'
 
 export interface MarkAttrs {
   href?: string

@@ -8,6 +8,7 @@ export const BTN = {
   italic: 'Italic (Mod+I)',
   underline: 'Underline (Mod+U)',
   strikethrough: 'Strikethrough',
+  code: 'Code (Mod+E)',
   link: 'Link (Mod+K)',
   ul: 'Bullet list',
   ol: 'Numbered list',
@@ -15,6 +16,7 @@ export const BTN = {
 
 export interface MountOptions {
   disabled?: boolean
+  placeholder?: string
 }
 
 export interface MountResult {

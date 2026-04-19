@@ -9,10 +9,13 @@ A lightweight WYSIWYG text editor for Vue 3 and React. AST-based, zero runtime d
 - **Works with Vue and React** — framework-agnostic core, thin per-framework wrappers. Pick your import and go.
 - **AST document model** -- content is a typed tree, not raw HTML. Schema rules enforce valid structure (e.g. lists cannot nest inside paragraphs).
 - **No `execCommand`** -- all formatting uses modern Range/Selection APIs via pure AST transforms. No deprecated browser APIs.
-- **Zero runtime dependencies** -- your UI framework is the only peer dependency. <!-- BUNDLE_SIZE -->Vue **32.65 kB** min / **10.38 kB** gzip · React **32.22 kB** min / **10.13 kB** gzip<!-- /BUNDLE_SIZE -->.
+- **Zero runtime dependencies** -- your UI framework is the only peer dependency. <!-- BUNDLE_SIZE -->Vue **36.94 kB** min / **11.63 kB** gzip · React **36.43 kB** min / **11.37 kB** gzip<!-- /BUNDLE_SIZE -->.
 - **Two-way binding** -- `v-model` in Vue, `value` + `onChange` in React. Set content programmatically, read it reactively.
 - **Plugin system** -- every feature (bold, headings, lists) is a plugin. Add custom plugins, override built-ins, or use only what you need.
 - **Full TypeScript API** -- typed commands (`toggleMark`, `setBlockType`, `toggleList`, `setLink`, `removeLink`) and state inspection (`isMarkActive`, `getBlockType`, `getHeadingLevel`, `getLinkHref`).
+- **Marks** -- bold, italic, underline, strikethrough, link, inline code.
+- **Placeholder** -- pass a `placeholder` prop; the hint appears when the editor is empty and vanishes as soon as the user types.
+- **Safe paste** -- content pasted from Word, Google Docs, or other web pages is run through an allowlist sanitizer. Only known tags are kept; classes, inline styles, Office-specific markup, and empty spacer paragraphs are stripped automatically.
 - **Undo / Redo** -- built-in history stack with Mod+Z / Mod+Shift+Z.
 - **SSR-safe** -- no browser API access at module evaluation time.
 - **Themeable** -- all visual properties exposed as CSS custom properties.
@@ -31,6 +34,7 @@ Eddy ships wrappers for Vue and React. Installation and code examples are split 
 | Mod+B       | Bold                                      |
 | Mod+I       | Italic                                    |
 | Mod+U       | Underline                                 |
+| Mod+E       | Inline code                               |
 | Mod+K       | Add / edit / remove link                  |
 | Mod+Z       | Undo                                      |
 | Mod+Shift+Z | Redo                                      |
@@ -46,12 +50,12 @@ Every feature in Eddy is a plugin. The full set of built-ins is loaded by defaul
 ```ts
 import { createPlugin } from 'eddy-editor'
 
-const codePlugin = createPlugin({
-  name: 'code',
-  keybinding: 'mod+e',
+const highlightPlugin = createPlugin({
+  name: 'highlight',
+  keybinding: 'mod+h',
   toolbar: {
-    label: '<>',
-    title: 'Inline code (Mod+E)',
+    label: 'H',
+    title: 'Highlight (Mod+H)',
   },
   command(api) {
     api.toggleMark('bold') // use any EditorAPI method
@@ -74,6 +78,7 @@ All built-in plugins are exported individually from `eddy-editor` so you can bui
 | Italic        | `italic`                  | Mod+I      |
 | Underline     | `underline`               | Mod+U      |
 | Strikethrough | `strikethrough`           |            |
+| Inline code   | `code`                    | Mod+E      |
 | Link          | `link`                    | Mod+K      |
 | Heading 1--6  | `heading1` ... `heading6` |            |
 | Bullet list   | `unorderedList`           |            |
@@ -89,7 +94,7 @@ The `api` object passed to plugin `command` and `isActive` callbacks — identic
 
 | Method                       | Description                                                                         |
 | ---------------------------- | ----------------------------------------------------------------------------------- |
-| `toggleMark(mark)`           | Toggle bold, italic, underline, or strikethrough                                    |
+| `toggleMark(mark)`           | Toggle bold, italic, underline, strikethrough, or inline code                       |
 | `setBlockType(type, attrs?)` | Set block to `'paragraph'` or `'heading'` with optional `{ level: 1-6 }`            |
 | `toggleList(ordered)`        | Toggle unordered (`false`) or ordered (`true`) list                                 |
 | `setLink(href)`              | Apply a link to the selection (or update the link under a collapsed cursor)         |
@@ -115,7 +120,7 @@ The `api` object passed to plugin `command` and `isActive` callbacks — identic
 | `doc`       | `DocumentNode`         | The current AST document tree                 |
 | `selection` | `ASTSelection \| null` | The current cursor/selection as AST positions |
 
-`MarkType` is `'bold' | 'italic' | 'underline' | 'strikethrough' | 'link'`. The `link` mark carries an `attrs: { href }` object; other marks have no attributes.
+`MarkType` is `'bold' | 'italic' | 'underline' | 'strikethrough' | 'link' | 'code'`. The `link` mark carries an `attrs: { href }` object; other marks have no attributes.
 
 ## Styling
 

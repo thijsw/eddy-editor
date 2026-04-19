@@ -357,6 +357,98 @@ export function insertHardBreak(doc: DocumentNode, sel: ASTSelection): CommandRe
   }
 }
 
+// ── insertDocument (paste) ────────────────────────────────────────────────────
+
+/**
+ * Splice a document's blocks into `doc` at the cursor. When the selection is
+ * non-collapsed the range is deleted first. The first inserted block merges
+ * its inlines into the cursor's block so text pastes flow inline; any
+ * remaining blocks are inserted after. The cursor lands at the end of the
+ * last merged/inserted content.
+ */
+export function insertDocument(
+  doc: DocumentNode,
+  sel: ASTSelection,
+  inserted: DocumentNode,
+): CommandResult {
+  if (inserted.blocks.length === 0) return { doc, selection: sel }
+
+  if (!isCollapsed(sel)) {
+    const cleared = deleteContent(doc, sel)
+    return insertDocument(cleared.doc, cleared.selection, inserted)
+  }
+
+  const pos = sel.anchor
+  const blockIdx = blockIndexOf(doc).get(pos.blockId) ?? -1
+  const target = doc.blocks[blockIdx]
+  if (!target) return { doc, selection: sel }
+
+  const { before, after } = splitInlinesAt(target.children, pos.inlineIndex, pos.offset)
+  const [firstInserted, ...restInserted] = inserted.blocks
+
+  // First inserted block's inlines merge into the cursor's block, preserving
+  // the target block type (a paste into a heading stays a heading).
+  const firstInlines = firstInserted.children.filter(
+    (n) => n.type !== 'text' || n.text.length > 0,
+  )
+
+  if (restInserted.length === 0) {
+    const mergedInlines = [...before, ...firstInlines, ...after]
+    const mergedBlock = withChildren(target, mergedInlines.length ? mergedInlines : [emptyText()])
+    const blocks = [...doc.blocks]
+    blocks[blockIdx] = mergedBlock
+
+    // Cursor lands where the inserted content ends.
+    let inlineIndex = before.length + firstInlines.length
+    let offset = 0
+    if (firstInlines.length > 0) {
+      const lastInserted = firstInlines[firstInlines.length - 1]
+      inlineIndex = before.length + firstInlines.length - 1
+      offset = lastInserted.type === 'text' ? lastInserted.text.length : 1
+    } else if (before.length > 0) {
+      const lastBefore = before[before.length - 1]
+      inlineIndex = before.length - 1
+      offset = lastBefore.type === 'text' ? lastBefore.text.length : 1
+    }
+
+    return {
+      doc: { type: 'document', blocks },
+      selection: collapsedAt({ blockId: target.id, inlineIndex, offset }),
+    }
+  }
+
+  // Multi-block paste: first block merges with `before`; last block merges
+  // with `after`; any middle blocks are inserted verbatim.
+  const firstMerged = withChildren(
+    target,
+    [...before, ...firstInlines].length ? [...before, ...firstInlines] : [emptyText()],
+  )
+
+  const middleBlocks = restInserted.slice(0, -1).map((b) => ({ ...b, id: generateId() }))
+  const lastInsertedBlock = restInserted[restInserted.length - 1]
+  const lastInlines = lastInsertedBlock.children.filter(
+    (n) => n.type !== 'text' || n.text.length > 0,
+  )
+  const lastChildren = [...lastInlines, ...after]
+  const lastBlock: BlockNode = {
+    ...lastInsertedBlock,
+    id: generateId(),
+    children: lastChildren.length ? lastChildren : [emptyText()],
+  }
+
+  const blocks = [...doc.blocks]
+  blocks.splice(blockIdx, 1, firstMerged, ...middleBlocks, lastBlock)
+
+  const inlineIndex = lastInlines.length > 0 ? lastInlines.length - 1 : 0
+  const lastAnchor = lastInlines[lastInlines.length - 1]
+  const offset = lastAnchor?.type === 'text' ? lastAnchor.text.length : 0
+
+  return {
+    doc: { type: 'document', blocks },
+    selection: collapsedAt({ blockId: lastBlock.id, inlineIndex, offset }),
+  }
+}
+
 // ── deleteContent ─────────────────────────────────────────────────────────────
 
 export function deleteContent(doc: DocumentNode, sel: ASTSelection): CommandResult {

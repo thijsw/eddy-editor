@@ -32,7 +32,7 @@
 import { computed, toRef, type Component } from 'vue'
 import type { EditorAPI, EddyPlugin } from '../types'
 import { useEditorState } from './use-editor-state'
-import { Bold, Italic, Underline, Strikethrough, List, ListOrdered, Link } from '@lucide/vue'
+import { Bold, Italic, Underline, Strikethrough, Code, List, ListOrdered, Link } from '@lucide/vue'
 
 const props = withDefaults(
   defineProps<{
@@ -64,6 +64,7 @@ const defaultIcons: Record<string, Component> = {
   italic: Italic,
   underline: Underline,
   strikethrough: Strikethrough,
+  code: Code,
   link: Link,
   unorderedList: List,
   orderedList: ListOrdered,

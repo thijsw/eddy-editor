@@ -173,6 +173,7 @@ const plugins = [bold, italic, heading1, heading2, unorderedList]
 | `onChange`      | `(html: string) => void`                          | —       | Called with canonical HTML on every edit                                   |
 | `plugins`       | `EddyPlugin[]`                                    | `[]`    | Additional or replacement plugins                                          |
 | `disabled`      | `boolean`                                         | `false` | Disables editing and toolbar controls                                      |
+| `placeholder`   | `string`                                          | —       | Hint shown when the editor is empty. Hidden as soon as the user types      |
 | `renderToolbar` | `(props: ToolbarSlotProps) => ReactNode`          | —       | Render prop for a custom toolbar. Falls back to the built-in `<EddyToolbar>` |
 
 ```ts

@@ -13,8 +13,9 @@ export const mountEditor: MountFn = async (
     lastEmitted = v
   }
 
+  const placeholder = opts.placeholder ?? ''
   const screen = render(Harness, {
-    props: { initial, disabled: opts.disabled ?? false, onEmit },
+    props: { initial, disabled: opts.disabled ?? false, placeholder, onEmit },
   })
 
   await nextTick()
@@ -23,13 +24,18 @@ export const mountEditor: MountFn = async (
   return {
     getEmitted: () => lastEmitted,
     setContent: async (html) => {
-      screen.rerender({ initial: html, disabled: opts.disabled ?? false, onEmit })
+      screen.rerender({
+        initial: html,
+        disabled: opts.disabled ?? false,
+        placeholder,
+        onEmit,
+      })
       await nextTick()
       await tick()
     },
     setDisabled: async (disabled) => {
       opts.disabled = disabled
-      screen.rerender({ initial, disabled, onEmit })
+      screen.rerender({ initial, disabled, placeholder, onEmit })
       await nextTick()
       await tick()
     },

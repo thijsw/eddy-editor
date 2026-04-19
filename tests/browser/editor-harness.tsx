@@ -4,10 +4,11 @@ import { EddyEditor } from '../../src/react/index'
 export interface HarnessProps {
   initial: string
   disabled?: boolean
+  placeholder?: string
   onEmit: (html: string) => void
 }
 
-export function Harness({ initial, disabled, onEmit }: HarnessProps) {
+export function Harness({ initial, disabled, placeholder, onEmit }: HarnessProps) {
   const [content, setContent] = useState(initial)
 
   useEffect(() => {
@@ -19,5 +20,12 @@ export function Harness({ initial, disabled, onEmit }: HarnessProps) {
     onEmit(v)
   }
 
-  return <EddyEditor value={content} onChange={onUpdate} disabled={disabled ?? false} />
+  return (
+    <EddyEditor
+      value={content}
+      onChange={onUpdate}
+      disabled={disabled ?? false}
+      placeholder={placeholder ?? ''}
+    />
+  )
 }
