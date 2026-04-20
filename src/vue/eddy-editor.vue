@@ -10,6 +10,7 @@
       :class="{ 'is-disabled': disabled }"
       :data-placeholder="placeholder || null"
       contenteditable="true"
+      v-html="ssrHTML"
       @input="onInput"
       @keydown="onKeydown"
       @paste="onPaste"
@@ -43,6 +44,10 @@ const props = withDefaults(defineProps<Props>(), {
 const emit = defineEmits<{
   'update:modelValue': [value: string]
 }>()
+
+// Captured once so Vue sees a stable value on re-renders and never overwrites
+// innerHTML after the Editor takes over on mount.
+const ssrHTML = props.modelValue
 
 const editorEl = shallowRef<HTMLElement | null>(null)
 // shallowRef: the Editor holds a deep AST. We never want Vue to wrap it in a

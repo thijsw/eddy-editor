@@ -47,6 +47,10 @@ export function EddyEditor({
   const isComposingRef = useRef<boolean>(false)
   const [api, setApi] = useState<EditorAPI | null>(null)
 
+  // Captured once so React sees a stable value on re-renders and never overwrites
+  // innerHTML after the Editor takes over on mount.
+  const ssrContent = useMemo(() => ({ __html: value }), [])
+
   const mergedPlugins = useMemo<EddyPlugin[]>(() => {
     const extras = consumerPlugins ?? []
     const consumerNames = new Set(extras.map((p) => p.name))
@@ -176,6 +180,7 @@ export function EddyEditor({
         ref={editorEl}
         className={`eddy-editor${disabled ? ' is-disabled' : ''}`}
         data-placeholder={placeholder || undefined}
+        dangerouslySetInnerHTML={ssrContent}
         suppressContentEditableWarning
         onInput={onInput}
         onKeyDown={onKeyDown}
