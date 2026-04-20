@@ -20,7 +20,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, shallowRef, watch, onMounted, useTemplateRef } from 'vue'
+import { computed, shallowRef, watch, onMounted } from 'vue'
 import EddyToolbar from './eddy-toolbar.vue'
 import { Editor } from '../editor'
 import { matchesKeybinding } from '../matches-keybinding'
@@ -44,7 +44,7 @@ const emit = defineEmits<{
   'update:modelValue': [value: string]
 }>()
 
-const editorEl = useTemplateRef('editorEl')
+const editorEl = shallowRef<HTMLElement | null>(null)
 // shallowRef: the Editor holds a deep AST. We never want Vue to wrap it in a
 // reactive proxy — the editor manages its own DOM and notifies via events.
 const api = shallowRef<EditorAPI | null>(null)
