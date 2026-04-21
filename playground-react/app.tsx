@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { EddyEditor } from 'eddy-editor/react'
+import { EddyEditor, defaultPlugins } from 'eddy-editor/react'
 import { HtmlPanel } from './html-panel'
 import { AstPanel } from './ast-panel'
 
@@ -21,6 +21,7 @@ export function App() {
           <EddyEditor
             value={content}
             onChange={setContent}
+            plugins={defaultPlugins}
             disabled={isDisabled}
             placeholder="Start typing to see the placeholder disappear…"
           />

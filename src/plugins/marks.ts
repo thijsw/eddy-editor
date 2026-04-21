@@ -1,22 +1,70 @@
-import type { MarkType } from '../ast/types'
 import type { EddyPlugin } from '../types'
+import type { MarkSpec } from '../ast/schema'
 
-function mark(type: MarkType, label: string, title: string, keybinding?: string): EddyPlugin {
+function markPlugin(
+  name: string,
+  spec: MarkSpec,
+  label: string,
+  title: string,
+  keybinding?: string,
+): EddyPlugin {
   return {
-    name: type,
-    ...(keybinding ? { keybinding } : {}),
-    toolbar: { label, title },
-    command(api) {
-      api.toggleMark(type)
+    name,
+    marks: [spec],
+    commands: {
+      [`${name}.toggle`]: (api) => api.toggleMark(name),
     },
-    isActive(api) {
-      return api.isMarkActive(type)
-    },
+    ...(keybinding ? { keybindings: { [keybinding]: `${name}.toggle` } } : {}),
+    toolbar: [
+      {
+        command: `${name}.toggle`,
+        label,
+        title,
+        isActive: (api) => api.isMarkActive(name),
+      },
+    ],
   }
 }
 
-export const bold = mark('bold', 'B', 'Bold (Mod+B)', 'mod+b')
-export const italic = mark('italic', 'I', 'Italic (Mod+I)', 'mod+i')
-export const underline = mark('underline', 'U', 'Underline (Mod+U)', 'mod+u')
-export const strikethrough = mark('strikethrough', 'S', 'Strikethrough')
-export const code = mark('code', '<>', 'Code (Mod+E)', 'mod+e')
+export const bold = markPlugin(
+  'bold',
+  { type: 'bold', parseDOM: [{ tag: 'strong' }, { tag: 'b' }], toDOM: () => ['strong'] },
+  'B',
+  'Bold (Mod+B)',
+  'mod+b',
+)
+
+export const italic = markPlugin(
+  'italic',
+  { type: 'italic', parseDOM: [{ tag: 'em' }, { tag: 'i' }], toDOM: () => ['em'] },
+  'I',
+  'Italic (Mod+I)',
+  'mod+i',
+)
+
+export const underline = markPlugin(
+  'underline',
+  { type: 'underline', parseDOM: [{ tag: 'u' }], toDOM: () => ['u'] },
+  'U',
+  'Underline (Mod+U)',
+  'mod+u',
+)
+
+export const strikethrough = markPlugin(
+  'strikethrough',
+  {
+    type: 'strikethrough',
+    parseDOM: [{ tag: 's' }, { tag: 'strike' }, { tag: 'del' }],
+    toDOM: () => ['s'],
+  },
+  'S',
+  'Strikethrough',
+)
+
+export const code = markPlugin(
+  'code',
+  { type: 'code', parseDOM: [{ tag: 'code' }], toDOM: () => ['code'] },
+  '<>',
+  'Code (Mod+E)',
+  'mod+e',
+)

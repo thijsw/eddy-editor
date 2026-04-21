@@ -1,102 +1,109 @@
-import type { BlockNode, DocumentNode, InlineNode, Mark, MarkType, ListItemNode } from './types'
+import type { BlockNode, DocumentNode, InlineNode } from './types'
+import type { DOMOutput, Schema } from './schema'
 
-const MARK_TO_TAG: Record<MarkType, string> = {
-  link: 'a',
-  bold: 'strong',
-  italic: 'em',
-  underline: 'u',
-  strikethrough: 's',
-  code: 'code',
+export function serializeToHTML(doc: DocumentNode, schema: Schema): string {
+  return renderBlocks(doc.blocks, false, schema)
 }
 
-// Canonical mark order: link wraps bold wraps italic wraps underline wraps strikethrough wraps code.
-const MARK_ORDER: MarkType[] = ['link', 'bold', 'italic', 'underline', 'strikethrough', 'code']
+export function serializeToDOMHTML(doc: DocumentNode, schema: Schema): string {
+  return renderBlocks(doc.blocks, true, schema)
+}
 
-function serializeInline(node: InlineNode): string {
+export function serializeBlockInner(block: BlockNode, schema: Schema): string {
+  return serializeInlinesOrBR(block.children, schema)
+}
+
+function serializeInline(node: InlineNode, schema: Schema): string {
   if (node.type === 'hardBreak') return '<br>'
 
   const text = escapeHTML(node.text)
   if (node.marks.length === 0) return text
 
-  return [...node.marks]
-    .sort((a, b) => MARK_ORDER.indexOf(a.type) - MARK_ORDER.indexOf(b.type))
-    .reduceRight((inner, mark) => openTag(mark) + inner + `</${MARK_TO_TAG[mark.type]}>`, text)
+  const sorted = [...node.marks].sort(
+    (a, b) => schema.markOrder.indexOf(a.type) - schema.markOrder.indexOf(b.type),
+  )
+
+  return sorted.reduceRight((inner, mark) => {
+    const spec = schema.marks.get(mark.type)
+    if (!spec) return inner
+    return renderDOM(spec.toDOM(mark), inner)
+  }, text)
 }
 
-function openTag(mark: Mark): string {
-  const tag = MARK_TO_TAG[mark.type]
-  if (mark.type === 'link') return `<a href="${escapeAttr(mark.attrs?.href ?? '')}">`
-  return `<${tag}>`
-}
-
-function escapeHTML(text: string): string {
-  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-}
-
-function escapeAttr(text: string): string {
-  return escapeHTML(text).replace(/"/g, '&quot;')
-}
-
-function serializeInlinesOrBR(nodes: InlineNode[]): string {
-  const html = nodes.map(serializeInline).join('')
+function serializeInlinesOrBR(nodes: InlineNode[], schema: Schema): string {
+  const html = nodes.map((n) => serializeInline(n, schema)).join('')
   return html === '' ? '<br>' : html
 }
 
-export function serializeBlockInner(block: BlockNode): string {
-  return serializeInlinesOrBR(block.children)
+function serializeSingleBlock(block: BlockNode, withIds: boolean, schema: Schema): string {
+  const inner = serializeInlinesOrBR(block.children, schema)
+  const extra = withIds ? { 'data-block-id': block.id } : undefined
+  const spec = schema.blocks.get(block.type)
+  const output: DOMOutput = spec ? spec.toDOM(block) : ['p']
+  return renderDOM(output, inner, extra)
 }
 
-function wrap(tag: string, inner: string, id?: string): string {
-  const attr = id ? ` data-block-id="${id}"` : ''
-  return `<${tag}${attr}>${inner}</${tag}>`
+function renderDOM(output: DOMOutput, inner: string, extraAttrs?: Record<string, string>): string {
+  const tag = output[0]
+  let attrs: Record<string, string> = {}
+  let childStart = 1
+  const maybe = output[1]
+  if (maybe !== undefined && maybe !== 0 && !Array.isArray(maybe) && typeof maybe === 'object') {
+    attrs = { ...(maybe as Record<string, string>) }
+    childStart = 2
+  }
+  if (extraAttrs) Object.assign(attrs, extraAttrs)
+
+  let attrStr = ''
+  for (const [key, value] of Object.entries(attrs)) {
+    attrStr += ` ${key}="${escapeAttr(value)}"`
+  }
+
+  // No explicit children — the tag wraps the inner content directly.
+  if (childStart >= output.length) {
+    return `<${tag}${attrStr}>${inner}</${tag}>`
+  }
+
+  let body = ''
+  for (let i = childStart; i < output.length; i++) {
+    const child = output[i]
+    if (child === 0) body += inner
+    else if (Array.isArray(child)) body += renderDOM(child as DOMOutput, inner)
+  }
+  return `<${tag}${attrStr}>${body}</${tag}>`
 }
 
-function serializeSingleBlock(block: BlockNode, withIds: boolean): string {
-  const id = withIds ? block.id : undefined
-  const inner = serializeInlinesOrBR(block.children)
-  if (block.type === 'heading') return wrap(`h${block.level}`, inner, id)
-  return wrap(block.type === 'listItem' ? 'li' : 'p', inner, id)
-}
-
-/** Canonical HTML — no internal attributes. Suitable for v-model. */
-export function serializeToHTML(doc: DocumentNode): string {
-  return renderBlocks(doc.blocks, false)
-}
-
-/**
- * Internal serialiser — annotates block elements with data-block-id so the DOM
- * mirror can be updated surgically and selection mapping stays stable.
- */
-export function serializeToDOMHTML(doc: DocumentNode): string {
-  return renderBlocks(doc.blocks, true)
-}
-
-function renderBlocks(blocks: BlockNode[], withIds: boolean): string {
+function renderBlocks(blocks: BlockNode[], withIds: boolean, schema: Schema): string {
   let html = ''
   let i = 0
 
   while (i < blocks.length) {
-    if (blocks[i].type !== 'listItem') {
-      html += serializeSingleBlock(blocks[i], withIds)
+    const spec = schema.blocks.get(blocks[i].type)
+    if (!spec?.group) {
+      html += serializeSingleBlock(blocks[i], withIds, schema)
       i++
       continue
     }
 
-    const listStack: string[] = [] // stack of open tag names ("ul" | "ol")
+    const listStack: string[] = []
     let depth = -1
 
-    while (i < blocks.length && blocks[i].type === 'listItem') {
-      const item = blocks[i] as ListItemNode
-      const wantTag = item.ordered ? 'ol' : 'ul'
+    while (i < blocks.length) {
+      const block = blocks[i]
+      const currentSpec = schema.blocks.get(block.type)
+      if (!currentSpec?.group) break
 
-      if (item.indent > depth) {
-        while (item.indent > depth) {
+      const wantTag = currentSpec.group.containerTag(block)
+      const wantDepth = currentSpec.group.depth(block)
+
+      if (wantDepth > depth) {
+        while (wantDepth > depth) {
           depth++
           html += `<${wantTag}>`
           listStack.push(wantTag)
         }
-      } else if (item.indent < depth) {
-        while (item.indent < depth) {
+      } else if (wantDepth < depth) {
+        while (wantDepth < depth) {
           html += `</${listStack.pop()}>`
           depth--
         }
@@ -105,7 +112,7 @@ function renderBlocks(blocks: BlockNode[], withIds: boolean): string {
         listStack.push(wantTag)
       }
 
-      html += serializeSingleBlock(item, withIds)
+      html += serializeSingleBlock(block, withIds, schema)
       i++
     }
 
@@ -113,4 +120,12 @@ function renderBlocks(blocks: BlockNode[], withIds: boolean): string {
   }
 
   return html
+}
+
+function escapeHTML(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
+function escapeAttr(text: string): string {
+  return escapeHTML(text).replace(/"/g, '&quot;')
 }

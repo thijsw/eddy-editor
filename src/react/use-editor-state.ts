@@ -1,70 +1,57 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import type { EditorAPI, EddyPlugin } from '../types'
+import { useEffect, useRef, useState } from 'react'
+import type { EditorAPI } from '../types'
 
-export interface EditorStateResult {
-  /** Plugin name → isActive boolean, synced with cursor and input events. */
-  states: Map<string, boolean>
-  /**
-   * Manually re-read active states. Call this after running an editor command
-   * so a custom toolbar reflects the result on the very next render — the
-   * browser only fires `selectionchange` asynchronously, so without `refresh`
-   * a React-controlled element (e.g. `<select value={currentBlockType}>`) can
-   * revert to its previous value before the hook catches up.
-   */
-  refresh: () => void
+interface ActiveStateItem {
+  key: string
+  isActive: ((api: EditorAPI) => boolean) | undefined
 }
 
 /**
- * Tracks plugin active states for a toolbar. Re-renders only when a plugin's
- * `isActive` result actually flips — cursor moves within the same formatting
- * region do not.
+ * Returns a `Map<string, boolean>` of active states keyed by each item's
+ * `key`. Subscribes to `editor.on('selectionchange')` and
+ * `editor.on('change')`, which fire synchronously from `_apply` — so the
+ * state is up-to-date within the same event tick as the command that
+ * triggered the change.
  */
 export function useEditorState(
   api: EditorAPI | null,
-  plugins: EddyPlugin[],
-): EditorStateResult {
+  items: ActiveStateItem[],
+): Map<string, boolean> {
   const [states, setStates] = useState<Map<string, boolean>>(() => new Map())
 
-  // Latest-ref pattern so `refresh` (memoised below) always reads the current
-  // api and plugins without needing to be re-created on every render.
   const apiRef = useRef<EditorAPI | null>(api)
   apiRef.current = api
-  const pluginsRef = useRef<EddyPlugin[]>(plugins)
-  pluginsRef.current = plugins
-
-  const refresh = useCallback((): void => {
-    const currentApi = apiRef.current
-    if (!currentApi) return
-
-    setStates((prev) => {
-      const next = new Map<string, boolean>()
-      const currentPlugins = pluginsRef.current
-      let changed = prev.size === 0 && currentPlugins.some((p) => p.isActive)
-
-      for (const plugin of currentPlugins) {
-        if (!plugin.isActive) continue
-        const value = plugin.isActive(currentApi)
-        next.set(plugin.name, value)
-        if (!changed && prev.get(plugin.name) !== value) changed = true
-      }
-
-      return changed ? next : prev
-    })
-  }, [])
+  const itemsRef = useRef<ActiveStateItem[]>(items)
+  itemsRef.current = items
 
   useEffect(() => {
     if (!api) return
 
-    const el = api.el
-    document.addEventListener('selectionchange', refresh)
-    el?.addEventListener('input', refresh)
-    refresh()
-
-    return () => {
-      document.removeEventListener('selectionchange', refresh)
-      el?.removeEventListener('input', refresh)
+    function refresh(): void {
+      const currentApi = apiRef.current
+      if (!currentApi) return
+      setStates((prev) => {
+        const next = new Map<string, boolean>()
+        const currentItems = itemsRef.current
+        let changed = prev.size === 0 && currentItems.some((i) => i.isActive)
+        for (const item of currentItems) {
+          if (!item.isActive) continue
+          const value = item.isActive(currentApi)
+          next.set(item.key, value)
+          if (!changed && prev.get(item.key) !== value) changed = true
+        }
+        return changed ? next : prev
+      })
     }
-  }, [api, refresh])
 
-  return { states, refresh }
+    const offSel = api.on('selectionchange', refresh)
+    const offChange = api.on('change', refresh)
+    refresh()
+    return () => {
+      offSel()
+      offChange()
+    }
+  }, [api])
+
+  return states
 }

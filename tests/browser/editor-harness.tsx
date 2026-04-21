@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { EddyEditor } from '../../src/react/index'
+import { defaultPlugins } from '../../src/plugins/index'
 
 export interface HarnessProps {
   initial: string
@@ -24,6 +25,7 @@ export function Harness({ initial, disabled, placeholder, onEmit }: HarnessProps
     <EddyEditor
       value={content}
       onChange={onUpdate}
+      plugins={defaultPlugins}
       disabled={disabled ?? false}
       placeholder={placeholder ?? ''}
     />

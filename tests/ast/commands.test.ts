@@ -2,14 +2,12 @@ import { describe, it, expect } from 'vitest'
 import {
   toggleMark,
   setBlockType,
-  toggleList,
   insertParagraph,
-  insertHardBreak,
   insertDocument,
   deleteContent,
   remapSelection,
 } from '../../src/ast/commands'
-import { doc, p, h, text, ul, br, pos, cursor, range } from './helpers'
+import { doc, p, h, text, ul, pos, cursor, range } from './helpers'
 
 // ── toggleMark ────────────────────────────────────────────────────────────────
 
@@ -152,7 +150,7 @@ describe('setBlockType', () => {
     const sel = cursor(0, 0, 0)
     const result = setBlockType(d, sel, 'heading', { level: 1 })
     expect(result.doc.blocks[0].type).toBe('heading')
-    expect((result.doc.blocks[0] as any).level).toBe(1)
+    expect((result.doc.blocks[0] as any).attrs.level).toBe(1)
   })
 
   it('toggles heading off (same level → paragraph)', () => {
@@ -167,7 +165,7 @@ describe('setBlockType', () => {
     const sel = cursor(0, 0, 0)
     const result = setBlockType(d, sel, 'heading', { level: 3 })
     expect(result.doc.blocks[0].type).toBe('heading')
-    expect((result.doc.blocks[0] as any).level).toBe(3)
+    expect((result.doc.blocks[0] as any).attrs.level).toBe(3)
   })
 
   it('converts heading to paragraph', () => {
@@ -189,62 +187,6 @@ describe('setBlockType', () => {
     const sel = range(pos(0, 0, 0), pos(2, 0, 1))
     const result = setBlockType(d, sel, 'heading', { level: 2 })
     expect(result.doc.blocks.every((b) => b.type === 'heading')).toBe(true)
-  })
-})
-
-// ── toggleList ────────────────────────────────────────────────────────────────
-
-describe('toggleList', () => {
-  it('wraps a paragraph in an unordered list', () => {
-    const d = doc(p(text('hello')))
-    const sel = cursor(0, 0, 0)
-    const result = toggleList(d, sel, false)
-    expect(result.doc.blocks[0].type).toBe('listItem')
-    expect((result.doc.blocks[0] as any).ordered).toBe(false)
-    expect((result.doc.blocks[0] as any).children[0].text).toBe('hello')
-  })
-
-  it('wraps a paragraph in an ordered list', () => {
-    const d = doc(p(text('hello')))
-    const sel = cursor(0, 0, 0)
-    const result = toggleList(d, sel, true)
-    expect((result.doc.blocks[0] as any).ordered).toBe(true)
-  })
-
-  it('unwraps an unordered list to paragraphs', () => {
-    const d = doc(ul(0, [text('a')], [text('b')], [text('c')]))
-    const sel = range(pos(0, 0, 0), pos(2, 0, 1))
-    const result = toggleList(d, sel, false)
-    expect(result.doc.blocks.length).toBe(3)
-    expect(result.doc.blocks.every((b) => b.type === 'paragraph')).toBe(true)
-  })
-
-  it('wraps multiple paragraphs into one list', () => {
-    const d = doc(p(text('a')), p(text('b')))
-    const sel = range(pos(0, 0, 0), pos(1, 0, 1))
-    const result = toggleList(d, sel, false)
-    expect(result.doc.blocks.length).toBe(2)
-    expect(result.doc.blocks[0].type).toBe('listItem')
-    expect(result.doc.blocks[1].type).toBe('listItem')
-  })
-
-  it('preserves blocks outside the selection', () => {
-    const d = doc(p(text('before')), p(text('target')), p(text('after')))
-    const sel = cursor(1, 0, 0)
-    const result = toggleList(d, sel, false)
-    expect(result.doc.blocks.length).toBe(3)
-    expect(result.doc.blocks[0].type).toBe('paragraph')
-    expect(result.doc.blocks[1].type).toBe('listItem')
-    expect(result.doc.blocks[2].type).toBe('paragraph')
-  })
-
-  it('selection is valid after unwrap', () => {
-    const d = doc(ul(0, [text('a')], [text('b')]))
-    // Cursor in second list item
-    const sel = cursor(1, 0, 1)
-    const result = toggleList(d, sel, false)
-    // Should be in the second paragraph (blockId b1)
-    expect(result.selection.anchor.blockId).toBe('b1')
   })
 })
 
@@ -315,28 +257,6 @@ describe('insertParagraph', () => {
     const result = insertParagraph(d, sel)
     expect(result.doc.blocks.length).toBe(2)
     expect((result.doc.blocks[0] as any).children[0].text).toBe('hello')
-  })
-})
-
-// ── insertHardBreak ───────────────────────────────────────────────────────────
-
-describe('insertHardBreak', () => {
-  it('inserts <br> at cursor position', () => {
-    const d = doc(p(text('hello world')))
-    const sel = cursor(0, 0, 5)
-    const result = insertHardBreak(d, sel)
-    const children = (result.doc.blocks[0] as any).children
-    expect(children[0]).toEqual(text('hello'))
-    expect(children[1]).toEqual(br())
-    expect(children[2].text).toBe(' world')
-  })
-
-  it('cursor lands after the break', () => {
-    const d = doc(p(text('hello')))
-    const sel = cursor(0, 0, 5)
-    const result = insertHardBreak(d, sel)
-    expect(result.selection.anchor.inlineIndex).toBe(2) // after br
-    expect(result.selection.anchor.offset).toBe(0)
   })
 })
 
@@ -415,8 +335,8 @@ describe('insertDocument', () => {
     const inserted = doc(p(text('X')), p(text('Y')), p(text('Z')))
     const result = insertDocument(d, sel, inserted)
     expect(result.doc.blocks.length).toBe(3)
-    const blockTexts = result.doc.blocks.map(
-      (b: any) => b.children.map((c: any) => c.text || '').join(''),
+    const blockTexts = result.doc.blocks.map((b: any) =>
+      b.children.map((c: any) => c.text || '').join(''),
     )
     expect(blockTexts[0]).toBe('ABCX')
     expect(blockTexts[1]).toBe('Y')

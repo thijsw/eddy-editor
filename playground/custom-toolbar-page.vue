@@ -13,7 +13,7 @@
     <main class="playground-main">
       <section class="demo-section">
         <h2 class="section-title">Editor</h2>
-        <eddy-editor v-model="content">
+        <eddy-editor v-model="content" :plugins="defaultPlugins">
           <template #toolbar="{ editor, plugins, disabled }">
             <custom-toolbar :editor="editor" :plugins="plugins" :disabled="disabled" />
           </template>
@@ -27,7 +27,7 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import { EddyEditor } from 'eddy-editor/vue'
+import { EddyEditor, defaultPlugins } from 'eddy-editor/vue'
 import HtmlPanel from './html-panel.vue'
 import CustomToolbar from './custom-toolbar.vue'
 

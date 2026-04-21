@@ -16,7 +16,7 @@
 </template>
 
 <script setup lang="ts">
-import { toRef, type Component } from 'vue'
+import { computed, toRef, type Component } from 'vue'
 import { useEditorState, type EditorAPI, type EddyPlugin } from 'eddy-editor/vue'
 import {
   Bold,
@@ -50,11 +50,18 @@ interface ToolbarButton {
   icon: Component
   title: string
   action: () => void
+  isActive: ((api: EditorAPI) => boolean) | undefined
 }
 
-function markButton(name: string, icon: Component, title: string): ToolbarButton {
-  const type = name as 'bold' | 'italic' | 'underline' | 'strikethrough'
-  return { name, icon, title, action: () => props.editor?.toggleMark(type) }
+function markButton(type: string, icon: Component, title: string): ToolbarButton {
+  const button: ToolbarButton = {
+    name: type,
+    icon,
+    title,
+    action: () => props.editor?.toggleMark(type),
+    isActive: (api) => api.isMarkActive(type),
+  }
+  return button
 }
 
 function headingButton(level: 1 | 2 | 3 | 4 | 5 | 6, icon: Component): ToolbarButton {
@@ -62,12 +69,25 @@ function headingButton(level: 1 | 2 | 3 | 4 | 5 | 6, icon: Component): ToolbarBu
     name: `heading${level}`,
     icon,
     title: `Heading ${level}`,
-    action: () => props.editor?.setBlockType('heading', { level }),
+    action: () => props.editor?.run('heading.set', level),
+    isActive: (api) => {
+      const block = api.getBlockAt()
+      return block?.type === 'heading' && block.attrs.level === level
+    },
   }
 }
 
 function listButton(name: string, icon: Component, title: string, ordered: boolean): ToolbarButton {
-  return { name, icon, title, action: () => props.editor?.toggleList(ordered) }
+  return {
+    name,
+    icon,
+    title,
+    action: () => props.editor?.run(ordered ? 'list.toggleOrdered' : 'list.toggleUnordered'),
+    isActive: (api) => {
+      const block = api.getBlockAt()
+      return block?.type === 'listItem' && Boolean(block.attrs.ordered) === ordered
+    },
+  }
 }
 
 function linkButton(): ToolbarButton {
@@ -75,19 +95,8 @@ function linkButton(): ToolbarButton {
     name: 'link',
     icon: Link,
     title: 'Link',
-    action: () => {
-      const editor = props.editor
-      if (!editor || typeof window === 'undefined') return
-      const current = editor.getLinkHref()
-      const input = window.prompt(current ? 'Edit link URL' : 'Link URL', current ?? '')
-      if (input === null) return
-      const trimmed = input.trim()
-      if (trimmed === '') {
-        if (current !== null) editor.removeLink()
-        return
-      }
-      editor.setLink(trimmed)
-    },
+    action: () => props.editor?.run('link.prompt'),
+    isActive: (api) => api.isMarkActive('link'),
   }
 }
 
@@ -107,7 +116,10 @@ const buttons: ToolbarButton[] = [
   listButton('orderedList', ListOrdered, 'Numbered list', true),
 ]
 
-const activeStates = useEditorState(editorRef, props.plugins)
+const items = computed(() => buttons.map((b) => ({ key: b.name, isActive: b.isActive })))
+const activeStates = useEditorState(editorRef, items)
+
+void props.plugins
 </script>
 
 <style scoped>

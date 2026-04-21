@@ -1,31 +1,8 @@
-import type { BlockNode, DocumentNode, InlineNode, Mark, MarkType } from './types'
+import type { BlockNode, DocumentNode, InlineNode, Mark } from './types'
 import { generateId, emptyText, emptyParagraph } from './types'
-import { sanitizeHref } from './sanitize-href'
+import type { BlockSpec, Schema } from './schema'
 
-const MARK_TAGS: Record<string, MarkType> = {
-  strong: 'bold',
-  b: 'bold',
-  em: 'italic',
-  i: 'italic',
-  u: 'underline',
-  s: 'strikethrough',
-  strike: 'strikethrough',
-  del: 'strikethrough',
-  code: 'code',
-}
-
-function isInlineLikeTag(tag: string): boolean {
-  return tag === 'br' || tag === 'span' || tag === 'a' || MARK_TAGS[tag] !== undefined
-}
-
-function linkMarkFor(el: Element): Mark | null {
-  const href = sanitizeHref(el.getAttribute('href'))
-  return href === null ? null : { type: 'link', attrs: { href } }
-}
-
-// ── Inline content parsing ────────────────────────────────────────────────────
-
-function parseInline(node: Node, marks: Mark[]): InlineNode[] {
+function parseInline(node: Node, marks: Mark[], schema: Schema): InlineNode[] {
   if (node.nodeType === Node.TEXT_NODE) {
     const text = node.textContent ?? ''
     return text === '' ? [] : [{ type: 'text', text, marks: [...marks] }]
@@ -36,113 +13,121 @@ function parseInline(node: Node, marks: Mark[]): InlineNode[] {
   const tag = el.tagName.toLowerCase()
   if (tag === 'br') return [{ type: 'hardBreak' }]
 
-  let childMarks = marks
-  if (tag === 'a') {
-    const linkMark = linkMarkFor(el)
-    // Drop any outer link mark — nested anchors collapse to the innermost href,
-    // matching browser rendering. If sanitization rejects the href, the anchor
-    // wrapper is dropped entirely and children are parsed without a link.
-    if (linkMark) childMarks = [...marks.filter((m) => m.type !== 'link'), linkMark]
-  } else {
-    const markType = MARK_TAGS[tag]
-    if (markType && !marks.some((m) => m.type === markType)) {
-      childMarks = [...marks, { type: markType }]
-    }
+  // Iterate mark rules registered for this tag; first non-vetoing rule wins.
+  // Run before the `<span>` transparent-unwrap so plugins can claim `<span>`
+  // via `getAttrs` (e.g. match `<span style="font-weight:700">` as bold).
+  for (const { spec, rule } of schema.markRulesForTag(tag)) {
+    const ruleAttrs = rule.getAttrs ? rule.getAttrs(el) : undefined
+    if (ruleAttrs === false) continue
+    const attrs = schema.parseMarkAttrs(spec, el, ruleAttrs ?? undefined)
+    const mark: Mark =
+      Object.keys(attrs).length > 0 ? { type: spec.type, attrs } : { type: spec.type }
+    const childMarks = [...marks.filter((m) => m.type !== spec.type), mark]
+    return parseChildrenInline(el, childMarks, schema)
   }
 
+  // No rule accepted (either no rule, or all rules vetoed). `<span>` and any
+  // other unknown inline tag unwrap transparently — children are kept
+  // without adopting any mark from this element.
+  return parseChildrenInline(el, marks, schema)
+}
+
+function parseChildrenInline(el: Element, marks: Mark[], schema: Schema): InlineNode[] {
   const result: InlineNode[] = []
-  for (const child of el.childNodes) result.push(...parseInline(child, childMarks))
+  for (const child of el.childNodes) result.push(...parseInline(child, marks, schema))
   return result
 }
 
-function parseBlockChildren(el: Element): InlineNode[] {
+function parseBlockChildren(el: Element, schema: Schema): InlineNode[] {
   const children: InlineNode[] = []
-  for (const child of el.childNodes) children.push(...parseInline(child, []))
+  for (const child of el.childNodes) children.push(...parseInline(child, [], schema))
   return children.length > 0 ? children : [emptyText()]
 }
 
-// ── Block parsing ─────────────────────────────────────────────────────────────
-
-/**
- * Read an existing data-block-id only if it matches our generator's base36
- * format. Foreign values are rejected — they could otherwise break out of the
- * attribute when serializeToDOMHTML interpolates them into innerHTML.
- */
 function blockId(el: Element): string {
   const id = el.getAttribute('data-block-id')
   return id && /^[0-9a-z]+$/.test(id) ? id : generateId()
 }
 
-function parseBlock(el: Element, indent = 0): BlockNode[] {
+function isInlineLikeTag(tag: string, schema: Schema): boolean {
+  return tag === 'br' || tag === 'span' || schema.hasMarkRuleForTag(tag)
+}
+
+function parseBlock(el: Element, indent: number, schema: Schema): BlockNode[] {
   const tag = el.tagName.toLowerCase()
 
-  if (tag === 'p' || tag === 'div') {
-    return [{ id: blockId(el), type: 'paragraph', children: parseBlockChildren(el) }]
-  }
-
-  const headingMatch = /^h([1-6])$/.exec(tag)
-  if (headingMatch) {
+  for (const { spec, rule } of schema.blockRulesForTag(tag)) {
+    const ruleAttrs = rule.getAttrs ? rule.getAttrs(el) : undefined
+    if (ruleAttrs === false) continue
+    const attrs = schema.parseBlockAttrs(spec, el, undefined, ruleAttrs ?? undefined)
     return [
       {
         id: blockId(el),
-        type: 'heading',
-        level: Number(headingMatch[1]) as 1 | 2 | 3 | 4 | 5 | 6,
-        children: parseBlockChildren(el),
+        type: spec.type,
+        attrs,
+        children: parseBlockChildren(el, schema),
       },
     ]
   }
 
-  if (tag === 'ul' || tag === 'ol') {
-    const blocks: BlockNode[] = []
-    const ordered = tag === 'ol'
-    for (const child of el.children) {
-      if (child.tagName.toLowerCase() !== 'li') continue
-      const itemChildren: InlineNode[] = []
-      const nestedBlocks: BlockNode[] = []
-
-      for (const node of child.childNodes) {
-        const childTag =
-          node.nodeType === Node.ELEMENT_NODE ? (node as Element).tagName.toLowerCase() : ''
-        if (childTag === 'ul' || childTag === 'ol') {
-          nestedBlocks.push(...parseBlock(node as Element, indent + 1))
-        } else {
-          itemChildren.push(...parseInline(node, []))
-        }
-      }
-
-      blocks.push({
-        id: blockId(child),
-        type: 'listItem',
-        ordered,
-        indent,
-        children: itemChildren.length > 0 ? itemChildren : [emptyText()],
-      })
-      blocks.push(...nestedBlocks)
-    }
-    return blocks
+  const containerSpec = schema.blockFromContainerTag(tag)
+  if (containerSpec && containerSpec.group) {
+    return parseGroupContainer(el, indent, containerSpec, schema)
   }
 
-  // Drop entirely — these would otherwise leak their source code as visible text.
   if (tag === 'script' || tag === 'style') return []
 
-  // Inline-like at block context — wrap in a paragraph so marks survive.
-  if (isInlineLikeTag(tag)) {
-    return [{ id: generateId(), type: 'paragraph', children: parseInline(el, []) }]
+  if (isInlineLikeTag(tag, schema)) {
+    return [
+      { id: generateId(), type: 'paragraph', attrs: {}, children: parseInline(el, [], schema) },
+    ]
   }
 
-  // Unknown element — drop the wrapper and recurse children at block level so
-  // nested block structure (e.g. <section><h1/><p/></section>) is preserved.
-  return unwrapAsBlocks(el.childNodes, indent)
+  return unwrapAsBlocks(el.childNodes, indent, schema)
 }
 
-// ── Document parsing ──────────────────────────────────────────────────────────
+function parseGroupContainer(
+  containerEl: Element,
+  indent: number,
+  spec: BlockSpec,
+  schema: Schema,
+): BlockNode[] {
+  if (!spec.group) return []
+  const containerAttrs = spec.group.parseContainer(containerEl)
+  const blocks: BlockNode[] = []
+  for (const child of containerEl.children) {
+    if (child.tagName.toLowerCase() !== 'li') continue
+    const itemChildren: InlineNode[] = []
+    const nestedBlocks: BlockNode[] = []
+    for (const node of child.childNodes) {
+      const childTag =
+        node.nodeType === Node.ELEMENT_NODE ? (node as Element).tagName.toLowerCase() : ''
+      const nestedContainer = schema.blockFromContainerTag(childTag)
+      if (nestedContainer) {
+        nestedBlocks.push(
+          ...parseGroupContainer(node as Element, indent + 1, nestedContainer, schema),
+        )
+      } else {
+        itemChildren.push(...parseInline(node, [], schema))
+      }
+    }
+    const attrs = schema.parseBlockAttrs(spec, child, { ...containerAttrs, indent })
+    blocks.push({
+      id: blockId(child),
+      type: spec.type,
+      attrs,
+      children: itemChildren.length > 0 ? itemChildren : [emptyText()],
+    })
+    blocks.push(...nestedBlocks)
+  }
+  return blocks
+}
 
-/**
- * Walks a NodeList in block context: nested block elements get parsed
- * standalone; inline content (text, mark tags, br, span) accumulates into a
- * paragraph that's flushed when a block element appears (or at the end).
- */
-function unwrapAsBlocks(childNodes: NodeListOf<ChildNode>, indent: number): BlockNode[] {
+function unwrapAsBlocks(
+  childNodes: NodeListOf<ChildNode>,
+  indent: number,
+  schema: Schema,
+): BlockNode[] {
   const blocks: BlockNode[] = []
   let pending: InlineNode[] = []
 
@@ -150,7 +135,7 @@ function unwrapAsBlocks(childNodes: NodeListOf<ChildNode>, indent: number): Bloc
     if (pending.length === 0) return
     const isBlank = pending.every((n) => n.type === 'text' && n.text.trim() === '')
     if (!isBlank || blocks.length === 0) {
-      blocks.push({ id: generateId(), type: 'paragraph', children: pending })
+      blocks.push({ id: generateId(), type: 'paragraph', attrs: {}, children: pending })
     }
     pending = []
   }
@@ -162,34 +147,33 @@ function unwrapAsBlocks(childNodes: NodeListOf<ChildNode>, indent: number): Bloc
       pending.push({ type: 'text', text, marks: [] })
     } else if (node.nodeType === Node.ELEMENT_NODE) {
       const tag = (node as Element).tagName.toLowerCase()
-      if (isInlineLikeTag(tag)) {
-        pending.push(...parseInline(node, []))
+      if (isInlineLikeTag(tag, schema)) {
+        pending.push(...parseInline(node, [], schema))
       } else {
         flush()
-        blocks.push(...parseBlock(node as Element, indent))
+        blocks.push(...parseBlock(node as Element, indent, schema))
       }
     }
   }
   flush()
-
   return blocks
 }
 
-function parseChildNodes(childNodes: NodeListOf<ChildNode>): DocumentNode {
-  const blocks = unwrapAsBlocks(childNodes, 0)
+function parseChildNodes(childNodes: NodeListOf<ChildNode>, schema: Schema): DocumentNode {
+  const blocks = unwrapAsBlocks(childNodes, 0, schema)
   if (blocks.length === 0) blocks.push(emptyParagraph())
   return { type: 'document', blocks }
 }
 
-export function parseHTML(html: string): DocumentNode {
+export function parseHTML(html: string, schema: Schema): DocumentNode {
   if (typeof document === 'undefined') {
     return { type: 'document', blocks: [emptyParagraph()] }
   }
   const container = document.createElement('div')
   container.innerHTML = html
-  return parseChildNodes(container.childNodes)
+  return parseChildNodes(container.childNodes, schema)
 }
 
-export function parseLiveDOM(el: HTMLElement): DocumentNode {
-  return parseChildNodes(el.childNodes)
+export function parseLiveDOM(el: HTMLElement, schema: Schema): DocumentNode {
+  return parseChildNodes(el.childNodes, schema)
 }

@@ -8,10 +8,10 @@ import {
   type ReactNode,
 } from 'react'
 import { Editor } from '../editor'
-import { matchesKeybinding } from '../matches-keybinding'
-import { defaultPlugins } from '../plugins/index'
 import type { EditorAPI, EddyPlugin } from '../types'
 import { EddyToolbar } from './eddy-toolbar'
+
+const EMPTY_PLUGINS: EddyPlugin[] = []
 
 export interface ToolbarSlotProps {
   editor: EditorAPI | null
@@ -22,12 +22,17 @@ export interface ToolbarSlotProps {
 export interface EddyEditorProps {
   value: string
   onChange?: (html: string) => void
+  /**
+   * Complete plugin list. No auto-merge with `defaultPlugins` — pass the
+   * exact set you want. Import `defaultPlugins` from `eddy-editor` if you
+   * want the full built-in set.
+   */
   plugins?: EddyPlugin[]
   disabled?: boolean
   placeholder?: string
   /**
    * Render function for a custom toolbar. Receives the current editor API,
-   * merged plugins, and disabled flag. When omitted, the default
+   * the plugin list, and disabled flag. When omitted, the default
    * `<EddyToolbar>` is rendered.
    */
   renderToolbar?: (props: ToolbarSlotProps) => ReactNode
@@ -36,7 +41,7 @@ export interface EddyEditorProps {
 export function EddyEditor({
   value,
   onChange,
-  plugins: consumerPlugins,
+  plugins,
   disabled = false,
   placeholder,
   renderToolbar,
@@ -47,27 +52,13 @@ export function EddyEditor({
   const isComposingRef = useRef<boolean>(false)
   const [api, setApi] = useState<EditorAPI | null>(null)
 
-  // Captured once so React sees a stable value on re-renders and never overwrites
-  // innerHTML after the Editor takes over on mount.
   const ssrContent = useMemo(() => ({ __html: value }), [])
 
-  const mergedPlugins = useMemo<EddyPlugin[]>(() => {
-    const extras = consumerPlugins ?? []
-    const consumerNames = new Set(extras.map((p) => p.name))
-    const builtins = defaultPlugins.filter((p) => !consumerNames.has(p.name))
-    return [...builtins, ...extras]
-  }, [consumerPlugins])
-  const pluginsRef = useRef<EddyPlugin[]>(mergedPlugins)
-  pluginsRef.current = mergedPlugins
+  const effectivePlugins = plugins ?? EMPTY_PLUGINS
 
-  // Ref the onChange so the Editor's emit callback never goes stale — the
-  // Editor is created once on mount and kept for the life of the component.
   const onChangeRef = useRef<typeof onChange>(onChange)
   onChangeRef.current = onChange
 
-  // Mount: create the Editor, seed its content, own the contenteditable
-  // attribute. The cleanup lets <React.StrictMode> double-invoke this effect
-  // in dev without leaving a stale Editor instance behind.
   useEffect(() => {
     const el = editorEl.current
     if (!el) return
@@ -76,22 +67,22 @@ export function EddyEditor({
       lastEmittedRef.current = html
       onChangeRef.current?.(html)
     }
-    const impl = new Editor(el, handleEmit)
+    const impl = new Editor(el, handleEmit, effectivePlugins)
     impl.loadHTML(value)
     el.contentEditable = disabled ? 'false' : 'true'
     implRef.current = impl
     setApi(impl)
 
     return () => {
+      impl.destroy()
       implRef.current = null
       setApi(null)
     }
-    // Intentionally empty deps — we want a single Editor instance.
+    // Intentionally empty deps — we want a single Editor instance. Changing
+    // `plugins` after mount is not supported.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Keep contentEditable imperative so React never patches it on re-render
-  // (which can reset the browser's contenteditable selection).
   useEffect(() => {
     if (editorEl.current) {
       editorEl.current.contentEditable = disabled ? 'false' : 'true'
@@ -112,16 +103,7 @@ export function EddyEditor({
   }
 
   function onPaste(event: ClipboardEvent<HTMLDivElement>): void {
-    const impl = implRef.current
-    if (!impl) return
-    event.preventDefault()
-    const data = event.clipboardData
-    const html = data.getData('text/html')
-    if (html) {
-      impl.insertHTML(html)
-    } else {
-      impl.insertText(data.getData('text/plain'))
-    }
+    implRef.current?.handlePaste(event.nativeEvent)
   }
 
   function onCompositionEnd(): void {
@@ -130,51 +112,21 @@ export function EddyEditor({
   }
 
   function onKeyDown(event: KeyboardEvent<HTMLDivElement>): void {
-    const impl = implRef.current
-    if (!api || !impl) return
-
-    const native = event.nativeEvent
-
-    if (matchesKeybinding(native, 'mod+z')) {
-      event.preventDefault()
-      impl.undo()
-      return
-    }
-    if (matchesKeybinding(native, 'mod+shift+z')) {
-      event.preventDefault()
-      impl.redo()
-      return
-    }
-
-    if (event.key === 'Enter' && !event.shiftKey) {
-      event.preventDefault()
-      impl.insertParagraph()
-      return
-    }
-    if (event.key === 'Enter' && event.shiftKey) {
-      // Browser handles Shift+Enter natively — <br> insertion and cursor
-      // placement. onInput() then re-syncs the AST.
-      impl.pushHistory()
-      return
-    }
-
-    for (const plugin of pluginsRef.current) {
-      if (plugin.keybinding && matchesKeybinding(native, plugin.keybinding)) {
-        event.preventDefault()
-        plugin.command(api)
-        return
-      }
-    }
+    implRef.current?.handleKeydown(event.nativeEvent)
   }
 
-  const slotProps: ToolbarSlotProps = { editor: api, plugins: mergedPlugins, disabled: !!disabled }
+  const slotProps: ToolbarSlotProps = {
+    editor: api,
+    plugins: effectivePlugins,
+    disabled: !!disabled,
+  }
 
   return (
     <div className="eddy-wrapper">
       {renderToolbar ? (
         renderToolbar(slotProps)
       ) : (
-        <EddyToolbar editor={api} plugins={mergedPlugins} disabled={!!disabled} />
+        <EddyToolbar editor={api} plugins={effectivePlugins} disabled={!!disabled} />
       )}
       <div
         ref={editorEl}

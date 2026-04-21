@@ -69,8 +69,7 @@ describe('cleanPastedHTML', () => {
   })
 
   it('handles Google Docs wrapper <b id="docs-internal-guid-…">', () => {
-    const input =
-      '<b id="docs-internal-guid-abc" style="font-weight:normal"><p>Hello</p></b>'
+    const input = '<b id="docs-internal-guid-abc" style="font-weight:normal"><p>Hello</p></b>'
     // The outer <b> keeps its tag but loses attrs; content is preserved.
     const out = cleanPastedHTML(input)
     expect(out).toContain('<p>Hello</p>')

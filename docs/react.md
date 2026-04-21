@@ -16,22 +16,24 @@ React 18 and 19 are both supported.
 
 ```tsx
 import { useState } from 'react'
-import { EddyEditor } from 'eddy-editor/react'
+import { EddyEditor, defaultPlugins } from 'eddy-editor/react'
 import 'eddy-editor/style.css'
 
 export function MyEditor() {
   const [content, setContent] = useState('<p>Hello world</p>')
-  return <EddyEditor value={content} onChange={setContent} />
+  return <EddyEditor value={content} onChange={setContent} plugins={defaultPlugins} />
 }
 ```
 
 `value` is an HTML string. On first render the editor is seeded with that string; every edit fires `onChange` with the updated canonical HTML. The editor ignores `value` updates that match the last HTML it emitted, so you don't need to worry about echo loops.
 
-The default toolbar (bold, italic, underline, strikethrough, link, headings, lists) renders automatically. All built-in plugins are included unless you override them via the `plugins` prop.
+The `plugins` prop is the **complete** plugin list — the wrapper does no auto-merging with `defaultPlugins`. Import and pass whichever subset you need. Omitting the prop gives you a minimally functional editor with the paragraph schema invariant but no formatting, Enter handling, paste handling, or undo/redo.
+
+**Import paths.** `EddyEditor`, `EddyToolbar`, `useEditorState`, and the decorated `defaultPlugins` (and individual plugin exports) come from `eddy-editor/react`. Framework-specific Lucide icons are baked into those plugin toolbar items at this layer so unused plugins and their icons tree-shake out. Import plugins from the root `eddy-editor` if you want the undecorated versions (no icons — just labels).
 
 ## Custom toolbar
 
-Replace the default toolbar by passing a `renderToolbar` render prop. It receives the live editor API, merged plugin list, and disabled flag, identical to Vue's `#toolbar` scoped slot.
+Replace the default toolbar by passing a `renderToolbar` render prop. It receives the live editor API, merged plugin list, and disabled flag — identical to Vue's `#toolbar` scoped slot.
 
 ### Inline render prop
 
@@ -41,8 +43,22 @@ Replace the default toolbar by passing a `renderToolbar` render prop. It receive
   onChange={setContent}
   renderToolbar={({ editor }) => (
     <div>
-      <button onMouseDown={(e) => { e.preventDefault(); editor?.toggleMark('bold') }}>Bold</button>
-      <button onMouseDown={(e) => { e.preventDefault(); editor?.toggleMark('italic') }}>Italic</button>
+      <button
+        onMouseDown={(e) => {
+          e.preventDefault()
+          editor?.run('bold.toggle')
+        }}
+      >
+        Bold
+      </button>
+      <button
+        onMouseDown={(e) => {
+          e.preventDefault()
+          editor?.run('italic.toggle')
+        }}
+      >
+        Italic
+      </button>
     </div>
   )}
 />
@@ -50,7 +66,7 @@ Replace the default toolbar by passing a `renderToolbar` render prop. It receive
 
 `onMouseDown` + `e.preventDefault()` is important — it stops the click from blurring the editor before the command runs.
 
-This works for simple cases, but the closure is not reactive to selection changes — button active states won't update as the cursor moves. Use `useEditorState` (below) for that.
+This works for simple cases, but the closure is not reactive to selection changes — button active states won't update as the cursor moves. Use `useEditorState` (below).
 
 To render no toolbar at all, pass a function that returns `null`:
 
@@ -60,10 +76,9 @@ To render no toolbar at all, pass a function that returns `null`:
 
 ### Custom toolbar component with reactive state
 
-For a toolbar that reflects the current formatting at the cursor, build a component that uses the `useEditorState` hook:
-
 ```tsx
 // MyToolbar.tsx
+import { useMemo } from 'react'
 import { useEditorState, type EditorAPI, type EddyPlugin } from 'eddy-editor/react'
 
 interface Props {
@@ -73,41 +88,43 @@ interface Props {
 }
 
 export function MyToolbar({ editor, plugins, disabled }: Props) {
-  // `states` is a Map<string, boolean> that re-renders on every selectionchange
-  // + input event. `refresh()` lets you re-read the states synchronously after
-  // running an editor command — needed for React-controlled elements that
-  // otherwise revert to their previous value before the event loop catches up.
-  const { states, refresh } = useEditorState(editor, plugins)
+  const items = useMemo(
+    () =>
+      plugins.flatMap((p, pi) =>
+        (p.toolbar ?? []).map((t, ti) => ({
+          key: `${p.name}:${pi}:${ti}`,
+          command: t.command,
+          args: t.args ?? [],
+          label: t.label,
+          title: t.title,
+          isActive: t.isActive,
+        })),
+      ),
+    [plugins],
+  )
 
-  function toggle(mark: 'bold' | 'italic'): void {
-    editor?.toggleMark(mark)
-    refresh()
-  }
+  const states = useEditorState(editor, items)
 
   return (
     <div className="my-toolbar">
-      <button
-        className={states.get('bold') ? 'active' : ''}
-        aria-pressed={states.get('bold') ?? false}
-        disabled={disabled}
-        onMouseDown={(e) => {
-          e.preventDefault()
-          toggle('bold')
-        }}
-      >
-        Bold
-      </button>
-      <button
-        className={states.get('italic') ? 'active' : ''}
-        aria-pressed={states.get('italic') ?? false}
-        disabled={disabled}
-        onMouseDown={(e) => {
-          e.preventDefault()
-          toggle('italic')
-        }}
-      >
-        Italic
-      </button>
+      {items.map((item) => {
+        const active = states.get(item.key) ?? false
+        return (
+          <button
+            key={item.key}
+            className={active ? 'active' : ''}
+            title={item.title}
+            aria-pressed={active}
+            disabled={disabled}
+            onMouseDown={(e) => {
+              e.preventDefault()
+              editor?.run(item.command, ...item.args)
+            }}
+          >
+            {item.label}
+          </button>
+        )
+      })}
     </div>
   )
 }
@@ -121,60 +138,80 @@ export function MyToolbar({ editor, plugins, disabled }: Props) {
 />
 ```
 
-`useEditorState(editor, plugins)` returns `{ states, refresh }`. `states` is a `Map<string, boolean>` keyed by plugin name; the hook listens to `selectionchange` and `input` events internally, so your buttons stay in sync as the user moves the cursor between formatted and plain text.
-
-Call `refresh()` in any handler that runs an editor command (e.g. after `editor.toggleMark(...)` or `editor.setBlockType(...)`). The browser fires `selectionchange` asynchronously, but React re-renders controlled elements like `<select value={...}>` synchronously after an event handler — without `refresh()` the render would use stale active states and a controlled element can revert to its previous value.
-
-The `plugins` argument gives you the full merged plugin list (built-ins + any consumer plugins), so you can also iterate over plugins dynamically instead of hardcoding each button.
+`useEditorState(editor, items)` returns a `Map<string, boolean>` keyed by each item's `key`. The hook subscribes to `editor.on('selectionchange')` and `editor.on('change')`, which fire synchronously from the editor's mutation path — React's batching flushes the state update in the same tick as the command that triggered it.
 
 ## Using custom plugins
 
-```ts
-import { createPlugin } from 'eddy-editor'
+Any plugin list is valid. Combine with the defaults:
 
-const codePlugin = createPlugin({
-  name: 'code',
-  keybinding: 'mod+e',
-  toolbar: { label: '<>', title: 'Inline code (Mod+E)' },
-  command(api) {
-    api.toggleMark('bold')
+```ts
+import { defaultPlugins } from 'eddy-editor'
+const plugins = [...defaultPlugins, highlight]
+```
+
+Plugins are plain objects typed as `EddyPlugin`:
+
+```ts
+import type { EddyPlugin } from 'eddy-editor'
+
+const highlight: EddyPlugin = {
+  name: 'highlight',
+  marks: [
+    {
+      type: 'highlight',
+      parseDOM: [{ tag: 'mark' }],
+      toDOM: () => ['mark'],
+    },
+  ],
+  commands: {
+    'highlight.toggle': (api) => api.toggleMark('highlight'),
   },
-  isActive(api) {
-    return api.isMarkActive('bold')
-  },
-})
+  keybindings: { 'mod+shift+h': 'highlight.toggle' },
+  toolbar: [
+    {
+      command: 'highlight.toggle',
+      label: 'H',
+      title: 'Highlight (Mod+Shift+H)',
+      isActive: (api) => api.isMarkActive('highlight'),
+    },
+  ],
+}
 ```
 
 ```tsx
-<EddyEditor value={content} onChange={setContent} plugins={[codePlugin]} />
+<EddyEditor value={content} onChange={setContent} plugins={[...defaultPlugins, highlight]} />
 ```
+
+See the [main README](../README.md#plugin-system) for the full plugin surface (blocks, `setup(ctx)`, transactions, schema rules).
 
 ## Using built-in plugins individually
 
-All built-in plugins are exported individually from `eddy-editor`. Build a custom plugin list to control exactly which features are available:
+All built-in plugins are exported individually from `eddy-editor`. Build an explicit plugin list to control exactly which features are available — and which chunks land in your bundle:
 
 ```ts
-import { bold, italic, heading1, heading2, unorderedList } from 'eddy-editor'
+import { core, bold, italic, heading, list } from 'eddy-editor'
 
-const plugins = [bold, italic, heading1, heading2, unorderedList]
+const plugins = [core, bold, italic, heading, list]
 ```
 
 ```tsx
 <EddyEditor value={content} onChange={setContent} plugins={plugins} />
 ```
 
+Tree-shaking works as expected: the plugins you don't import aren't in your bundle. Omitting `core` loses Enter / Shift+Enter / paste / Mod+Z handling but the `paragraph` schema invariant stays — parsing and serialising still work.
+
 ## API reference
 
 ### `<EddyEditor>` props
 
-| Prop            | Type                                              | Default | Description                                                                |
-| --------------- | ------------------------------------------------- | ------- | -------------------------------------------------------------------------- |
-| `value`         | `string`                                          | —       | HTML content                                                               |
-| `onChange`      | `(html: string) => void`                          | —       | Called with canonical HTML on every edit                                   |
-| `plugins`       | `EddyPlugin[]`                                    | `[]`    | Additional or replacement plugins                                          |
-| `disabled`      | `boolean`                                         | `false` | Disables editing and toolbar controls                                      |
-| `placeholder`   | `string`                                          | —       | Hint shown when the editor is empty. Hidden as soon as the user types      |
-| `renderToolbar` | `(props: ToolbarSlotProps) => ReactNode`          | —       | Render prop for a custom toolbar. Falls back to the built-in `<EddyToolbar>` |
+| Prop            | Type                                     | Default | Description                                                                  |
+| --------------- | ---------------------------------------- | ------- | ---------------------------------------------------------------------------- |
+| `value`         | `string`                                 | —       | HTML content                                                                 |
+| `onChange`      | `(html: string) => void`                 | —       | Called with canonical HTML on every edit                                     |
+| `plugins`       | `EddyPlugin[]`                           | `[]`    | Complete plugin list. No auto-merge — pass `defaultPlugins` for defaults     |
+| `disabled`      | `boolean`                                | `false` | Disables editing and toolbar controls                                        |
+| `placeholder`   | `string`                                 | —       | Hint shown when the editor is empty                                          |
+| `renderToolbar` | `(props: ToolbarSlotProps) => ReactNode` | —       | Render prop for a custom toolbar. Falls back to the built-in `<EddyToolbar>` |
 
 ```ts
 interface ToolbarSlotProps {
@@ -186,37 +223,42 @@ interface ToolbarSlotProps {
 
 ### `<EddyToolbar>` props
 
-| Prop       | Type                | Description                                |
-| ---------- | ------------------- | ------------------------------------------ |
-| `editor`   | `EditorAPI \| null` | The editor API instance                    |
-| `plugins`  | `EddyPlugin[]`      | Merged plugin list                         |
-| `disabled` | `boolean`           | Whether controls are disabled (optional)   |
+| Prop       | Type                | Description                              |
+| ---------- | ------------------- | ---------------------------------------- |
+| `editor`   | `EditorAPI \| null` | The editor API instance                  |
+| `plugins`  | `EddyPlugin[]`      | Merged plugin list                       |
+| `disabled` | `boolean`           | Whether controls are disabled (optional) |
 
-### `EddyPlugin`
+The default toolbar has one built-in element: a heading-level `<select>` (Normal / H1–H6). Headings are near-universal and a dropdown is better UX than six buttons. Every other control comes from plugin-contributed `ToolbarItem`s. If you want zero built-in UI, pass a `renderToolbar` prop.
+
+### `EddyPlugin` essentials
 
 ```ts
 interface EddyPlugin {
   name: string
-  keybinding?: string
-  toolbar?: { label: string; title: string; icon?: unknown }
-  command(api: EditorAPI): void
+  marks?: MarkSpec[]
+  blocks?: BlockSpec[]
+  commands?: Record<string, (api: EditorAPI, ...args: unknown[]) => void>
+  keybindings?: Record<string, string> // "mod+b" → command name
+  toolbar?: ToolbarItem[]
+  schemaRules?: SchemaRule[]
+  setup?(ctx: PluginContext): (() => void) | void
+}
+
+interface ToolbarItem {
+  command: string
+  args?: unknown[] // spread into editor.run(command, ...args)
+  label: string
+  title: string
+  icon?: unknown // React `ComponentType<{ size?: number }>` in this wrapper
   isActive?(api: EditorAPI): boolean
 }
 ```
 
-The `icon` field accepts a React `ComponentType<{ size?: number }>` in this wrapper (the default toolbar renders it as `<Icon size={16} />`). For example, a `lucide-react` icon works directly.
+Full schema details (`MarkSpec`, `BlockSpec`, `PluginContext`, `TransactionAPI`) are in the [root README](../README.md#plugin-system) and the exported TypeScript types.
 
-### `createPlugin(config)`
+### `useEditorState(editor, items)`
 
-Type-safe factory for authoring plugins. Returns the config unchanged; the value is in TypeScript inference.
-
-### `useEditorState(api, plugins)`
-
-Hook that returns `{ states, refresh }`:
-
-- `states: Map<string, boolean>` — plugin-name → isActive. Updates on every `selectionchange` and `input` event. Triggers a re-render only when an active state actually changes.
-- `refresh: () => void` — manually re-read active states. Call after running an editor command so React-controlled elements (like `<select value={...}>`) see the updated state on the next render without waiting for the async `selectionchange` event.
-
-Pass the editor API directly (no ref wrapper).
+Hook returning a `Map<string, boolean>` — each `item.key` → `item.isActive(editor)`. Subscribes to `editor.on('selectionchange')` and `editor.on('change')` internally; both fire synchronously from the editor's mutation path, so state updates land within the same event handler as the command that caused them.
 
 See the [main README](../README.md) for the full `EditorAPI` surface, keyboard shortcuts, styling, and AST utilities.

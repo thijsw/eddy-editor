@@ -1,19 +1,9 @@
-import type {
-  BlockNode,
-  DocumentNode,
-  HeadingNode,
-  InlineNode,
-  ListItemNode,
-  Mark,
-  MarkType,
-  ParagraphNode,
-  TextNode,
-} from '../../src/ast/types'
+import type { BlockNode, DocumentNode, InlineNode, Mark, TextNode } from '../../src/ast/types'
 import type { ASTPosition, ASTSelection } from '../../src/ast/selection'
 
 // ── Node builders ─────────────────────────────────────────────────────────────
 
-export function text(str: string, ...marks: MarkType[]): TextNode {
+export function text(str: string, ...marks: string[]): TextNode {
   return { type: 'text', text: str, marks: marks.map((m) => ({ type: m })) }
 }
 
@@ -21,27 +11,27 @@ export function br(): InlineNode {
   return { type: 'hardBreak' }
 }
 
-export function p(...children: InlineNode[]): ParagraphNode {
+export function p(...children: InlineNode[]): BlockNode {
   if (children.length === 0) children = [text('')]
-  return { id: '', type: 'paragraph', children }
+  return { id: '', type: 'paragraph', attrs: {}, children }
 }
 
-export function h(level: 1 | 2 | 3 | 4 | 5 | 6, ...children: InlineNode[]): HeadingNode {
+export function h(level: 1 | 2 | 3 | 4 | 5 | 6, ...children: InlineNode[]): BlockNode {
   if (children.length === 0) children = [text('')]
-  return { id: '', type: 'heading', level, children }
+  return { id: '', type: 'heading', attrs: { level }, children }
 }
 
-export function li(indent: number, ordered: boolean, ...children: InlineNode[]): ListItemNode {
+export function li(indent: number, ordered: boolean, ...children: InlineNode[]): BlockNode {
   if (children.length === 0) children = [text('')]
-  return { id: '', type: 'listItem', indent, ordered, children }
+  return { id: '', type: 'listItem', attrs: { ordered, indent }, children }
 }
 
 /** Helper to create multiple list items easily */
-export function ul(indent: number, ...items: InlineNode[][]): ListItemNode[] {
+export function ul(indent: number, ...items: InlineNode[][]): BlockNode[] {
   return items.map((children) => li(indent, false, ...children))
 }
 
-export function ol(indent: number, ...items: InlineNode[][]): ListItemNode[] {
+export function ol(indent: number, ...items: InlineNode[][]): BlockNode[] {
   return items.map((children) => li(indent, true, ...children))
 }
 
@@ -75,6 +65,6 @@ export function range(anchor: ASTPosition, head: ASTPosition): ASTSelection {
 
 // ── Mark helpers ──────────────────────────────────────────────────────────────
 
-export function marks(...types: MarkType[]): Mark[] {
+export function marks(...types: string[]): Mark[] {
   return types.map((t) => ({ type: t }))
 }

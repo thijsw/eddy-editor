@@ -2,6 +2,7 @@
   <eddy-editor
     :model-value="content"
     @update:model-value="onUpdate"
+    :plugins="defaultPlugins"
     :disabled="disabled ?? false"
     :placeholder="placeholder ?? ''"
   />
@@ -10,6 +11,7 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import { EddyEditor } from '../../src/vue/index'
+import { defaultPlugins } from '../../src/plugins/index'
 
 const props = defineProps<{
   initial: string

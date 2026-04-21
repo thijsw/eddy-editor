@@ -8,7 +8,7 @@
 <script setup lang="ts">
 import { computed, h, type FunctionalComponent } from 'vue'
 import { parseHTML } from 'eddy-editor'
-import type { DocumentNode, BlockNode, InlineNode, ListItemNode, Mark } from 'eddy-editor'
+import type { DocumentNode, BlockNode, InlineNode, Mark } from 'eddy-editor'
 
 const props = defineProps<{
   html: string
@@ -16,74 +16,61 @@ const props = defineProps<{
 
 const doc = computed(() => parseHTML(props.html))
 
-// Indentation helper
 function indent(depth: number): string {
   return '  '.repeat(depth)
 }
 
-// Recursive functional component to render tree nodes
+function formatAttrs(attrs: Record<string, unknown>): string {
+  const entries = Object.entries(attrs)
+  if (entries.length === 0) return ''
+  return entries.map(([k, v]) => `${k}=${JSON.stringify(v)}`).join(' ')
+}
+
 const AstNode: FunctionalComponent<{
-  node: DocumentNode | BlockNode | InlineNode | ListItemNode
+  node: DocumentNode | BlockNode | InlineNode
   depth: number
 }> = (props) => {
   const { node, depth } = props
   const children: (ReturnType<typeof h> | string)[] = []
 
-  if (node.type === 'document') {
+  if ('blocks' in node) {
+    const docNode = node as DocumentNode
     children.push(h('span', { class: 'ast-document' }, `${indent(depth)}document\n`))
-    for (const child of node.blocks) {
-      children.push(h(AstNode, { node: child, depth: depth + 1 }))
-    }
-  } else if (node.type === 'paragraph') {
-    children.push(
-      h('span', { class: 'ast-block' }, `${indent(depth)}paragraph `),
-      h('span', { class: 'ast-id' }, `id=${node.id}`),
-      '\n',
-    )
-    for (const child of node.children) {
-      children.push(h(AstNode, { node: child, depth: depth + 1 }))
-    }
-  } else if (node.type === 'heading') {
-    children.push(
-      h('span', { class: 'ast-block' }, `${indent(depth)}heading `),
-      h('span', { class: 'ast-prop' }, `level=${node.level}`),
-      ' ',
-      h('span', { class: 'ast-id' }, `id=${node.id}`),
-      '\n',
-    )
-    for (const child of node.children) {
-      children.push(h(AstNode, { node: child, depth: depth + 1 }))
-    }
-  } else if (node.type === 'listItem') {
-    children.push(
-      h('span', { class: 'ast-block' }, `${indent(depth)}listItem `),
-      h('span', { class: 'ast-prop' }, `ordered=${node.ordered} indent=${node.indent}`),
-      ' ',
-      h('span', { class: 'ast-id' }, `id=${node.id}`),
-      '\n',
-    )
-    for (const child of node.children) {
+    for (const child of docNode.blocks) {
       children.push(h(AstNode, { node: child, depth: depth + 1 }))
     }
   } else if (node.type === 'text') {
-    if (node.marks.length > 0) {
-      const markStr = node.marks.map((m: Mark) => m.type).join(', ')
+    const textNode = node as Extract<InlineNode, { type: 'text' }>
+    if (textNode.marks.length > 0) {
+      const markStr = textNode.marks.map((m: Mark) => m.type).join(', ')
       children.push(
         h('span', { class: 'ast-inline' }, `${indent(depth)}text `),
         h('span', { class: 'ast-mark' }, `[${markStr}]`),
         ' ',
-        h('span', { class: 'ast-text' }, `"${node.text}"`),
+        h('span', { class: 'ast-text' }, `"${textNode.text}"`),
         '\n',
       )
     } else {
       children.push(
         h('span', { class: 'ast-inline' }, `${indent(depth)}text `),
-        h('span', { class: 'ast-text' }, `"${node.text}"`),
+        h('span', { class: 'ast-text' }, `"${textNode.text}"`),
         '\n',
       )
     }
   } else if (node.type === 'hardBreak') {
     children.push(h('span', { class: 'ast-inline' }, `${indent(depth)}hardBreak\n`))
+  } else {
+    const blockNode = node as BlockNode
+    const attrStr = formatAttrs(blockNode.attrs)
+    children.push(
+      h('span', { class: 'ast-block' }, `${indent(depth)}${blockNode.type} `),
+      ...(attrStr ? [h('span', { class: 'ast-prop' }, attrStr), ' '] : []),
+      h('span', { class: 'ast-id' }, `id=${blockNode.id}`),
+      '\n',
+    )
+    for (const child of blockNode.children) {
+      children.push(h(AstNode, { node: child, depth: depth + 1 }))
+    }
   }
 
   return children

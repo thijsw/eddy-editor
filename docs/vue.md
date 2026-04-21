@@ -14,12 +14,12 @@ npm install eddy-editor vue @lucide/vue
 
 ```vue
 <template>
-  <eddy-editor v-model="content" />
+  <eddy-editor v-model="content" :plugins="defaultPlugins" />
 </template>
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import { EddyEditor } from 'eddy-editor/vue'
+import { EddyEditor, defaultPlugins } from 'eddy-editor/vue'
 import 'eddy-editor/style.css'
 
 const content = ref('<p>Hello world</p>')
@@ -28,7 +28,9 @@ const content = ref('<p>Hello world</p>')
 
 The `v-model` value is an HTML string. On first render the editor is seeded with that string; every edit emits an updated HTML string back.
 
-The default toolbar (bold, italic, underline, strikethrough, link, headings, lists) renders automatically. All built-in plugins are included unless you override them via the `plugins` prop.
+The `plugins` prop is the **complete** plugin list — the wrapper does no auto-merging with `defaultPlugins`. Import and pass whichever subset you need. If you pass no plugins (or omit the prop), you get a minimally functional editor with the paragraph schema invariant but no formatting, Enter handling, paste handling, or undo/redo.
+
+**Import paths.** `EddyEditor`, `EddyToolbar`, `useEditorState`, and the decorated `defaultPlugins` (and individual plugin exports) come from `eddy-editor/vue`. Framework-specific Lucide icons are baked into those plugin toolbar items at this layer so unused plugins and their icons tree-shake out. Import plugins from the root `eddy-editor` if you want the undecorated versions (no icons — just labels).
 
 ## Custom toolbar
 
@@ -42,8 +44,8 @@ The `#toolbar` slot exposes the `EditorAPI` directly:
 <template>
   <eddy-editor v-model="content">
     <template #toolbar="{ editor }">
-      <button @mousedown.prevent="editor?.toggleMark('bold')">Bold</button>
-      <button @mousedown.prevent="editor?.toggleMark('italic')">Italic</button>
+      <button @mousedown.prevent="editor?.run('bold.toggle')">Bold</button>
+      <button @mousedown.prevent="editor?.run('italic.toggle')">Italic</button>
     </template>
   </eddy-editor>
 </template>
@@ -51,7 +53,7 @@ The `#toolbar` slot exposes the `EditorAPI` directly:
 
 `@mousedown.prevent` is important — it stops the click from blurring the editor before the command runs.
 
-This works for simple cases, but the slot prop is not reactive to selection changes — button active states won't update as the cursor moves.
+This works for simple cases, but the slot prop is not reactive to selection changes — button active states won't update as the cursor moves. Use `useEditorState` (below).
 
 To render no toolbar at all, pass an empty template:
 
@@ -63,31 +65,26 @@ To render no toolbar at all, pass an empty template:
 
 ### Custom toolbar component with reactive state
 
-For a toolbar that reflects the current formatting at the cursor, create a component that receives the slot props and uses the `useEditorState` composable:
+For a toolbar that reflects the current formatting at the cursor, create a component that uses the `useEditorState` composable:
 
 ```vue
 <!-- MyToolbar.vue -->
 <template>
   <div class="my-toolbar">
     <button
-      :class="{ active: states.get('bold') }"
-      :aria-pressed="states.get('bold') ?? false"
-      @mousedown.prevent="editor?.toggleMark('bold')"
+      v-for="item in items"
+      :key="item.key"
+      :class="{ active: states.get(item.key) }"
+      :aria-pressed="states.get(item.key) ?? false"
+      @mousedown.prevent="editor?.run(item.command)"
     >
-      Bold
-    </button>
-    <button
-      :class="{ active: states.get('italic') }"
-      :aria-pressed="states.get('italic') ?? false"
-      @mousedown.prevent="editor?.toggleMark('italic')"
-    >
-      Italic
+      {{ item.label }}
     </button>
   </div>
 </template>
 
 <script setup lang="ts">
-import { toRef } from 'vue'
+import { computed, toRef } from 'vue'
 import { useEditorState, type EditorAPI, type EddyPlugin } from 'eddy-editor/vue'
 
 const props = defineProps<{
@@ -96,8 +93,20 @@ const props = defineProps<{
   disabled: boolean
 }>()
 
-// Reactive Map<string, boolean> — updates on every selectionchange and input event
-const states = useEditorState(toRef(props, 'editor'), props.plugins)
+// Flatten each plugin's toolbar contributions into `items`.
+const items = computed(() =>
+  props.plugins.flatMap((p, pi) =>
+    (p.toolbar ?? []).map((t, ti) => ({
+      key: `${p.name}:${pi}:${ti}`,
+      command: t.command,
+      label: t.label,
+      isActive: t.isActive,
+    })),
+  ),
+)
+
+// Reactive Map<string, boolean> keyed by item.key — updates on selectionchange and change events.
+const states = useEditorState(toRef(props, 'editor'), items)
 </script>
 ```
 
@@ -111,60 +120,80 @@ Pass the slot props through to your component:
 </eddy-editor>
 ```
 
-`useEditorState` returns a reactive `Ref<Map<string, boolean>>` keyed by plugin name. It listens to `selectionchange` and `input` events, so your toolbar buttons stay in sync as the user moves the cursor between formatted and plain text.
-
-The `plugins` prop gives you the full merged plugin list (built-ins + any consumer plugins), so you can also iterate over plugins dynamically instead of hardcoding each button.
-
 ## Using custom plugins
 
-```ts
-import { createPlugin } from 'eddy-editor'
+Any plugin list is valid. Combine with the defaults:
 
-const codePlugin = createPlugin({
-  name: 'code',
-  keybinding: 'mod+e',
-  toolbar: { label: '<>', title: 'Inline code (Mod+E)' },
-  command(api) {
-    api.toggleMark('bold')
+```ts
+import { defaultPlugins } from 'eddy-editor'
+const plugins = [...defaultPlugins, highlight]
+```
+
+Plugins are plain objects typed as `EddyPlugin`:
+
+```ts
+import type { EddyPlugin } from 'eddy-editor'
+
+const highlight: EddyPlugin = {
+  name: 'highlight',
+  marks: [
+    {
+      type: 'highlight',
+      parseDOM: [{ tag: 'mark' }],
+      toDOM: () => ['mark'],
+    },
+  ],
+  commands: {
+    'highlight.toggle': (api) => api.toggleMark('highlight'),
   },
-  isActive(api) {
-    return api.isMarkActive('bold')
-  },
-})
+  keybindings: { 'mod+shift+h': 'highlight.toggle' },
+  toolbar: [
+    {
+      command: 'highlight.toggle',
+      label: 'H',
+      title: 'Highlight (Mod+Shift+H)',
+      isActive: (api) => api.isMarkActive('highlight'),
+    },
+  ],
+}
 ```
 
 ```vue
-<eddy-editor v-model="content" :plugins="[codePlugin]" />
+<eddy-editor v-model="content" :plugins="[...defaultPlugins, highlight]" />
 ```
+
+See the [main README](../README.md#plugin-system) for the full plugin surface (blocks, `setup(ctx)`, transactions, schema rules).
 
 ## Using built-in plugins individually
 
-All built-in plugins are exported individually from `eddy-editor`. Build a custom plugin list to control exactly which features are available:
+All built-in plugins are exported individually from `eddy-editor`. Build an explicit plugin list to control exactly which features are available — and which chunks land in your bundle:
 
 ```ts
-import { bold, italic, heading1, heading2, unorderedList } from 'eddy-editor'
+import { core, bold, italic, heading, list } from 'eddy-editor'
 
-const plugins = [bold, italic, heading1, heading2, unorderedList]
+const plugins = [core, bold, italic, heading, list]
 ```
 
 ```vue
 <eddy-editor v-model="content" :plugins="plugins" />
 ```
 
+Tree-shaking works as expected: the plugins you don't import aren't in your bundle. Omitting `core` loses Enter / Shift+Enter / paste / Mod+Z handling but the `paragraph` schema invariant stays — parsing and serialising still work.
+
 ## API reference
 
 ### `<eddy-editor>` props
 
-| Prop          | Type           | Default | Description                                                           |
-| ------------- | -------------- | ------- | --------------------------------------------------------------------- |
-| `modelValue`  | `string`       | --      | HTML content (use with `v-model`)                                     |
-| `plugins`     | `EddyPlugin[]` | `[]`    | Additional or replacement plugins                                     |
-| `disabled`    | `boolean`      | `false` | Disables editing and toolbar controls                                 |
-| `placeholder` | `string`       | `''`    | Hint shown when the editor is empty. Hidden as soon as the user types |
+| Prop          | Type           | Default | Description                                                              |
+| ------------- | -------------- | ------- | ------------------------------------------------------------------------ |
+| `modelValue`  | `string`       | —       | HTML content (use with `v-model`)                                        |
+| `plugins`     | `EddyPlugin[]` | `[]`    | Complete plugin list. No auto-merge — pass `defaultPlugins` for defaults |
+| `disabled`    | `boolean`      | `false` | Disables editing and toolbar controls                                    |
+| `placeholder` | `string`       | `''`    | Hint shown when the editor is empty. Hidden as soon as the user types    |
 
-| Slot      | Slot props                                                                | Description                                                                                  |
-| --------- | ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| `toolbar` | `{ editor: EditorAPI \| null, plugins: EddyPlugin[], disabled: boolean }` | Rendered above the editing area. Falls back to the built-in `<eddy-toolbar>` when not given. |
+| Slot      | Slot props                                                                | Description                                                                               |
+| --------- | ------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `toolbar` | `{ editor: EditorAPI \| null, plugins: EddyPlugin[], disabled: boolean }` | Rendered above the editing area. Falls back to the built-in `<eddy-toolbar>` when absent. |
 
 ### `<eddy-toolbar>` props
 
@@ -174,26 +203,41 @@ const plugins = [bold, italic, heading1, heading2, unorderedList]
 | `plugins`  | `EddyPlugin[]`      | Merged plugin list (from slot prop)            |
 | `disabled` | `boolean`           | Whether controls are disabled (from slot prop) |
 
-### `EddyPlugin`
+The default toolbar has one built-in element: a heading-level `<select>` (Normal / H1–H6). Headings are near-universal and a dropdown is better UX than six buttons. Every other control comes from plugin-contributed `ToolbarItem`s. If you want zero built-in UI, supply your own `#toolbar` slot.
+
+### `EddyPlugin` essentials
 
 ```ts
 interface EddyPlugin {
   name: string
-  keybinding?: string
-  toolbar?: { label: string; title: string; icon?: unknown }
-  command(api: EditorAPI): void
+  marks?: MarkSpec[]
+  blocks?: BlockSpec[]
+  commands?: Record<string, (api: EditorAPI, ...args: unknown[]) => void>
+  keybindings?: Record<string, string> // "mod+b" → command name
+  toolbar?: ToolbarItem[]
+  schemaRules?: SchemaRule[]
+  setup?(ctx: PluginContext): (() => void) | void
+}
+
+interface ToolbarItem {
+  command: string
+  args?: unknown[] // spread into editor.run(command, ...args)
+  label: string
+  title: string
+  icon?: unknown // Vue `Component` in this wrapper
   isActive?(api: EditorAPI): boolean
 }
 ```
 
-The `icon` field accepts a Vue `Component` in this wrapper (the default toolbar renders it via `<component :is="icon" :size="16" />`).
+Full schema details (`MarkSpec`, `BlockSpec`, `PluginContext`, `TransactionAPI`) are in the [root README](../README.md#plugin-system) and the exported TypeScript types.
 
-### `createPlugin(config)`
+### `useEditorState(api, items)`
 
-Type-safe factory for authoring plugins. Returns the config unchanged; the value is in TypeScript inference.
+Composable that returns a reactive `Ref<Map<string, boolean>>` of active states keyed by each item's `key`.
 
-### `useEditorState(api, plugins)`
+- `api: Ref<EditorAPI | null>` — editor ref. Use `toRef(props, 'editor')` from a slot prop.
+- `items: Ref<{ key: string; isActive?: (api: EditorAPI) => boolean }[]>` — the items to track. Toolbar items' plugin/command identity make a good key.
 
-Composable that returns a reactive `Ref<Map<string, boolean>>` of plugin active states. The `api` argument should be a `Ref<EditorAPI | null>` — use `toRef(props, 'editor')` to create one from a prop. Listens to `selectionchange` and `input` events so toolbar buttons stay in sync with the cursor position. Must be called inside a component's `setup` (requires lifecycle hooks).
+Internally subscribes to `editor.on('selectionchange')` and `editor.on('change')`. Cleans up on unmount.
 
 See the [main README](../README.md) for the full `EditorAPI` surface, keyboard shortcuts, styling, and AST utilities.

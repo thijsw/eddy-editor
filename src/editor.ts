@@ -1,12 +1,23 @@
-import type { EditorAPI } from './types'
-import type { DocumentNode, MarkType } from './ast/types'
-import { emptyParagraph, emptyText, generateId } from './ast/types'
+import type {
+  CommandFn,
+  EddyPlugin,
+  EditorAPI,
+  EditorEvent,
+  EventHandlerMap,
+  PluginContext,
+  TransactionAPI,
+} from './types'
+import type { BlockNode, DocumentNode, Mark } from './ast/types'
+import { emptyParagraph } from './ast/types'
 import type { ASTSelection } from './ast/selection'
+import { positionsEqual } from './ast/selection'
+import type { Schema, MarkSpec, BlockSpec, SchemaRule } from './ast/schema'
+import { Schema as SchemaCls } from './ast/schema'
 import { parseHTML, parseLiveDOM } from './ast/parse'
 import { serializeToHTML, serializeToDOMHTML, serializeBlockInner } from './ast/serialize'
 import { readSelection, applySelection } from './ast/dom-mapping'
 import { applySchema, defaultRules } from './ast/schema'
-import { cleanPastedHTML } from './ast/clean-paste'
+import { matchesKeybinding } from './matches-keybinding'
 import * as cmd from './ast/commands'
 import * as inspect from './ast/inspect'
 import * as history from './ast/history'
@@ -19,13 +30,59 @@ export class Editor implements EditorAPI {
   private _history: history.HistoryStack
   private _historyDebounce: ReturnType<typeof setTimeout> | null = null
 
+  private readonly _schema: Schema
+  private readonly _rules: SchemaRule[]
+  private readonly _commands: Map<string, CommandFn> = new Map()
+  private readonly _keybindings: Map<string, string> = new Map()
+  private readonly _listeners: Map<EditorEvent, Set<(...args: never[]) => void>> = new Map()
+  private readonly _cleanups: Array<() => void> = []
+  private _onDocSelectionChange: (() => void) | null = null
+
   constructor(
     private readonly _el: HTMLElement,
     private readonly _emit: EmitFn,
+    plugins: EddyPlugin[],
   ) {
+    this._schema = buildSchema(plugins)
+    this._rules = [...defaultRules, ...plugins.flatMap((p) => p.schemaRules ?? [])]
     this._doc = { type: 'document', blocks: [emptyParagraph()] }
     this._history = history.create(this._doc, null)
+
+    for (const plugin of plugins) {
+      if (plugin.commands) {
+        for (const [name, fn] of Object.entries(plugin.commands)) {
+          this._commands.set(name, fn)
+        }
+      }
+      if (plugin.keybindings) {
+        for (const [key, cmdName] of Object.entries(plugin.keybindings)) {
+          this._keybindings.set(key.toLowerCase(), cmdName)
+        }
+      }
+    }
+
+    const ctx: PluginContext = {
+      editor: this,
+      registerCommand: (name: string, fn: CommandFn): (() => void) => {
+        this._commands.set(name, fn)
+        return () => this._commands.delete(name)
+      },
+    }
+
+    for (const plugin of plugins) {
+      if (plugin.setup) {
+        const cleanup = plugin.setup(ctx)
+        if (cleanup) this._cleanups.push(cleanup)
+      }
+    }
+
+    if (typeof document !== 'undefined') {
+      this._onDocSelectionChange = () => this._readSelectionFromDOM()
+      document.addEventListener('selectionchange', this._onDocSelectionChange)
+    }
   }
+
+  // ── EditorAPI — properties ────────────────────────────────────────────────
 
   get el(): HTMLElement {
     return this._el
@@ -39,21 +96,70 @@ export class Editor implements EditorAPI {
     return this._selection
   }
 
-  /** Replace the document with fresh HTML. Used on init and v-model changes. */
+  get schema(): Schema {
+    return this._schema
+  }
+
+  get tr(): TransactionAPI {
+    return {
+      apply: (fn) => this._apply(fn),
+    }
+  }
+
+  // ── EditorAPI — mutation primitives ───────────────────────────────────────
+
+  toggleMark(type: string, attrs?: Record<string, unknown>): void {
+    const excludes = this._schema.marks.get(type)?.excludes
+    this._apply((doc, sel) => cmd.toggleMark(doc, sel, type, attrs, excludes))
+  }
+
+  setBlockType(type: string, attrs?: Record<string, unknown>): void {
+    this._apply((doc, sel) => cmd.setBlockType(doc, sel, type, attrs))
+  }
+
+  // ── EditorAPI — inspection ────────────────────────────────────────────────
+
+  isMarkActive(type: string): boolean {
+    this._readSelectionFromDOM()
+    return this._selection ? inspect.isMarkActive(this._doc, this._selection, type) : false
+  }
+
+  getMarkAt(type: string): Mark | null {
+    this._readSelectionFromDOM()
+    return this._selection ? inspect.getMarkAt(this._doc, this._selection, type) : null
+  }
+
+  getBlockAt(): BlockNode | null {
+    this._readSelectionFromDOM()
+    return this._selection ? inspect.getBlockAt(this._doc, this._selection) : null
+  }
+
+  // ── EditorAPI — command dispatch ──────────────────────────────────────────
+
+  run(command: string, ...args: unknown[]): void {
+    const fn = this._commands.get(command)
+    if (!fn) {
+      if (typeof console !== 'undefined') console.warn(`[eddy] unknown command: ${command}`)
+      return
+    }
+    fn(this, ...args)
+  }
+
+  on<E extends EditorEvent>(event: E, handler: EventHandlerMap[E]): () => void {
+    return this._subscribe(event, handler as (...args: never[]) => void)
+  }
+
+  // ── Editor lifecycle (not part of EditorAPI) ──────────────────────────────
+
   loadHTML(html: string): void {
-    this._doc = applySchema(parseHTML(html), defaultRules)
+    this._doc = applySchema(parseHTML(html, this._schema), this._rules)
     this._selection = null
     this._history = history.create(this._doc, null)
-    this._el.innerHTML = serializeToDOMHTML(this._doc)
+    this._el.innerHTML = serializeToDOMHTML(this._doc, this._schema)
     this._updateEmptyAttr()
     this._emitCanonical()
   }
 
-  /**
-   * True when the document is a single paragraph with no typed text. The
-   * contenteditable `<p><br></p>` placeholder the browser inserts after
-   * select-all + delete counts as empty.
-   */
   isEmpty(): boolean {
     const { blocks } = this._doc
     if (blocks.length !== 1) return false
@@ -65,104 +171,24 @@ export class Editor implements EditorAPI {
     return true
   }
 
-  /** Called from the input handler after the browser mutates the DOM. */
   syncFromDOM(): void {
-    this._doc = applySchema(parseLiveDOM(this._el), defaultRules)
+    this._doc = applySchema(parseLiveDOM(this._el, this._schema), this._rules)
     this._selection = readSelection(this._el)
     this._scheduleHistoryPush()
     this._updateEmptyAttr()
     this._emitCanonical()
   }
 
-  // ── Commands ──────────────────────────────────────────────────────────────
-
-  toggleMark(mark: MarkType): void {
-    this._apply((doc, sel) => cmd.toggleMark(doc, sel, mark))
-  }
-
-  setBlockType(type: 'paragraph' | 'heading', attrs?: { level?: 1 | 2 | 3 | 4 | 5 | 6 }): void {
-    this._apply((doc, sel) => cmd.setBlockType(doc, sel, type, attrs))
-  }
-
-  toggleList(ordered: boolean): void {
-    this._apply((doc, sel) => cmd.toggleList(doc, sel, ordered))
-  }
-
-  setLink(href: string): void {
-    this._apply((doc, sel) => cmd.setLink(doc, sel, href))
-  }
-
-  removeLink(): void {
-    this._apply((doc, sel) => cmd.removeLink(doc, sel))
-  }
-
-  insertParagraph(): void {
-    this._apply((doc, sel) => cmd.insertParagraph(doc, sel))
-  }
-
-  insertHardBreak(): void {
-    this._apply((doc, sel) => cmd.insertHardBreak(doc, sel))
-  }
-
-  /** Clean pasted HTML and splice it into the doc at the cursor. */
   insertHTML(html: string): void {
-    const cleaned = cleanPastedHTML(html)
-    if (cleaned.trim() === '') return
-    const inserted = parseHTML(cleaned)
+    const inserted = parseHTML(html, this._schema)
     if (inserted.blocks.length === 0) return
     this._apply((doc, sel) => cmd.insertDocument(doc, sel, inserted))
   }
 
-  /** Insert plain text at the cursor. Newlines become paragraph breaks. */
-  insertText(text: string): void {
-    if (text === '') return
-    const lines = text.split(/\r?\n/)
-    const blocks = lines.map((line) => ({
-      id: generateId(),
-      type: 'paragraph' as const,
-      children: line.length > 0 ? [{ type: 'text' as const, text: line, marks: [] }] : [emptyText()],
-    }))
-    const inserted: DocumentNode = { type: 'document', blocks }
-    this._apply((doc, sel) => cmd.insertDocument(doc, sel, inserted))
-  }
-
-  /**
-   * Commits any pending typed state to history. Used before passing control
-   * to the browser (e.g. Shift+Enter) so later edits undo cleanly.
-   */
   pushHistory(): void {
     this._readSelectionFromDOM()
     this._flushHistoryDebounce()
   }
-
-  // ── State inspection ──────────────────────────────────────────────────────
-
-  isMarkActive(mark: MarkType): boolean {
-    this._readSelectionFromDOM()
-    return this._selection ? inspect.isMarkActive(this._doc, this._selection, mark) : false
-  }
-
-  getBlockType(): 'paragraph' | 'heading' | 'list' | 'mixed' {
-    this._readSelectionFromDOM()
-    return this._selection ? inspect.getBlockType(this._doc, this._selection) : 'paragraph'
-  }
-
-  getHeadingLevel(): 1 | 2 | 3 | 4 | 5 | 6 | null {
-    this._readSelectionFromDOM()
-    return this._selection ? inspect.getHeadingLevel(this._doc, this._selection) : null
-  }
-
-  getListType(): 'ordered' | 'unordered' | null {
-    this._readSelectionFromDOM()
-    return this._selection ? inspect.getListType(this._doc, this._selection) : null
-  }
-
-  getLinkHref(): string | null {
-    this._readSelectionFromDOM()
-    return this._selection ? inspect.getLinkHref(this._doc, this._selection) : null
-  }
-
-  // ── Undo / Redo ───────────────────────────────────────────────────────────
 
   undo(): void {
     this._flushHistoryDebounce()
@@ -179,7 +205,64 @@ export class Editor implements EditorAPI {
     this._restore(history.current(this._history))
   }
 
-  // ── Private helpers ───────────────────────────────────────────────────────
+  destroy(): void {
+    this._flushHistoryDebounce()
+    if (this._onDocSelectionChange && typeof document !== 'undefined') {
+      document.removeEventListener('selectionchange', this._onDocSelectionChange)
+      this._onDocSelectionChange = null
+    }
+    for (const cleanup of this._cleanups.splice(0)) {
+      try {
+        cleanup()
+      } catch (err) {
+        if (typeof console !== 'undefined') console.error('[eddy] plugin cleanup failed:', err)
+      }
+    }
+    this._dispatch('destroy')
+    this._listeners.clear()
+  }
+
+  // ── Raw event hooks (framework wrappers call these) ───────────────────────
+
+  handleKeydown(event: KeyboardEvent): void {
+    this._dispatch('keydown', event)
+    if (event.defaultPrevented) return
+
+    for (const [key, cmdName] of this._keybindings) {
+      if (matchesKeybinding(event, key)) {
+        event.preventDefault()
+        this.run(cmdName)
+        return
+      }
+    }
+  }
+
+  handlePaste(event: ClipboardEvent): void {
+    this._dispatch('paste', event)
+  }
+
+  // ── Private — event bus ───────────────────────────────────────────────────
+
+  private _subscribe(event: EditorEvent, handler: (...args: never[]) => void): () => void {
+    let set = this._listeners.get(event)
+    if (!set) {
+      set = new Set()
+      this._listeners.set(event, set)
+    }
+    set.add(handler)
+    return () => set!.delete(handler)
+  }
+
+  private _dispatch<E extends EditorEvent>(
+    event: E,
+    ...args: Parameters<EventHandlerMap[E]>
+  ): void {
+    const set = this._listeners.get(event)
+    if (!set) return
+    for (const handler of set) (handler as (...a: unknown[]) => void)(...args)
+  }
+
+  // ── Private — apply / render ──────────────────────────────────────────────
 
   private _apply(
     command: (
@@ -189,18 +272,17 @@ export class Editor implements EditorAPI {
   ): void {
     this._readSelectionFromDOM()
     if (!this._selection) return
-    // Flush any pending typed state so it's in history before this snapshot.
     this._flushHistoryDebounce()
 
     const oldDoc = this._doc
+    const oldSel = this._selection
     const result = command(this._doc, this._selection)
-    const normalized = applySchema(result.doc, defaultRules)
-    // Schema normalisation (e.g. merging adjacent text nodes with identical
-    // marks) can shift inline indices, so remap the selection across it.
+    const normalized = applySchema(result.doc, this._rules)
     const newSel = cmd.remapSelection(result.doc, normalized, result.selection)
     this._render(oldDoc, normalized, newSel)
     this._history = history.push(this._history, normalized, newSel)
     this._emitCanonical()
+    if (!oldSel || !selectionsEqual(oldSel, newSel)) this._dispatch('selectionchange', newSel)
   }
 
   private _restore(entry: history.HistoryEntry): void {
@@ -209,12 +291,17 @@ export class Editor implements EditorAPI {
   }
 
   private _emitCanonical(): void {
-    this._emit(serializeToHTML(this._doc))
+    const html = serializeToHTML(this._doc, this._schema)
+    this._emit(html)
+    this._dispatch('change', html)
   }
 
   private _readSelectionFromDOM(): void {
     const sel = readSelection(this._el)
-    if (sel) this._selection = sel
+    if (!sel) return
+    if (this._selection && selectionsEqual(this._selection, sel)) return
+    this._selection = sel
+    this._dispatch('selectionchange', sel)
   }
 
   private _updateEmptyAttr(): void {
@@ -226,8 +313,6 @@ export class Editor implements EditorAPI {
     this._selection = newSel
 
     if (canSurgicallyUpdate(oldDoc, newDoc)) {
-      // Single DOM scan beats N querySelector calls when many blocks changed
-      // (lists nest blocks inside <ul>/<ol>, so children iteration is unsafe).
       const elementsById = new Map<string, Element>()
       for (const el of this._el.querySelectorAll('[data-block-id]')) {
         elementsById.set(el.getAttribute('data-block-id')!, el)
@@ -237,10 +322,10 @@ export class Editor implements EditorAPI {
         const newBlock = newDoc.blocks[i]
         if (oldBlock === newBlock) continue
         const blockEl = elementsById.get(newBlock.id)
-        if (blockEl) blockEl.innerHTML = serializeBlockInner(newBlock)
+        if (blockEl) blockEl.innerHTML = serializeBlockInner(newBlock, this._schema)
       }
     } else {
-      this._el.innerHTML = serializeToDOMHTML(newDoc)
+      this._el.innerHTML = serializeToDOMHTML(newDoc, this._schema)
     }
 
     this._updateEmptyAttr()
@@ -264,9 +349,9 @@ export class Editor implements EditorAPI {
 }
 
 /**
- * Surgical DOM updates are only safe when block IDs, types, and list-wrapper
- * attributes (ordered + indent) match in order — anything else changes the
- * HTML element tree (list grouping, heading level) and needs a full render.
+ * Surgical DOM updates are only safe when block IDs, types, and grouping-
+ * relevant attrs (list ordered/indent, heading level) match in order —
+ * anything else changes the HTML element tree and needs a full render.
  */
 function canSurgicallyUpdate(oldDoc: DocumentNode, newDoc: DocumentNode): boolean {
   if (oldDoc.blocks.length !== newDoc.blocks.length) return false
@@ -274,14 +359,29 @@ function canSurgicallyUpdate(oldDoc: DocumentNode, newDoc: DocumentNode): boolea
     const a = oldDoc.blocks[i]
     const b = newDoc.blocks[i]
     if (a.id !== b.id || a.type !== b.type) return false
-    if (a.type === 'heading' && b.type === 'heading' && a.level !== b.level) return false
+    const aAttrs = a.attrs
+    const bAttrs = b.attrs
+    if (a.type === 'heading' && aAttrs.level !== bAttrs.level) return false
     if (
       a.type === 'listItem' &&
-      b.type === 'listItem' &&
-      (a.ordered !== b.ordered || a.indent !== b.indent)
+      (aAttrs.ordered !== bAttrs.ordered || aAttrs.indent !== bAttrs.indent)
     ) {
       return false
     }
   }
   return true
+}
+
+function selectionsEqual(a: ASTSelection, b: ASTSelection): boolean {
+  return positionsEqual(a.anchor, b.anchor) && positionsEqual(a.head, b.head)
+}
+
+function buildSchema(plugins: EddyPlugin[]): Schema {
+  const marks: MarkSpec[] = []
+  const blocks: BlockSpec[] = []
+  for (const plugin of plugins) {
+    if (plugin.marks) marks.push(...plugin.marks)
+    if (plugin.blocks) blocks.push(...plugin.blocks)
+  }
+  return new SchemaCls(marks, blocks)
 }

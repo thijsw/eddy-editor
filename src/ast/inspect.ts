@@ -1,13 +1,11 @@
-import type { DocumentNode, MarkType } from './types'
+import type { DocumentNode, Mark, BlockNode } from './types'
 import type { ASTSelection } from './selection'
 import { blockIndexOf, normalizeSelection, positionsEqual } from './selection'
 
-// ── Mark inspection ───────────────────────────────────────────────────────────
-
 /**
- * Returns true if the given mark is active at the cursor or across the entire selection.
+ * True if the given mark type is active at the cursor or across the entire selection.
  */
-export function isMarkActive(doc: DocumentNode, sel: ASTSelection, mark: MarkType): boolean {
+export function isMarkActive(doc: DocumentNode, sel: ASTSelection, mark: string): boolean {
   const [start, end] = normalizeSelection(doc, sel)
   const idx = blockIndexOf(doc)
 
@@ -41,60 +39,24 @@ export function isMarkActive(doc: DocumentNode, sel: ASTSelection, mark: MarkTyp
   return found
 }
 
-// ── Block type inspection ─────────────────────────────────────────────────────
-
-type BlockTypeResult = 'paragraph' | 'heading' | 'list' | 'mixed'
-
-export function getBlockType(doc: DocumentNode, sel: ASTSelection): BlockTypeResult {
-  const [start, end] = normalizeSelection(doc, sel)
-  const idx = blockIndexOf(doc)
-  const startIdx = idx.get(start.blockId) ?? -1
-  const endIdx = idx.get(end.blockId) ?? -1
-
-  let result: BlockTypeResult | null = null
-  for (let i = startIdx; i <= endIdx; i++) {
-    const block = doc.blocks[i]
-    if (!block) continue
-    const type: BlockTypeResult = block.type === 'listItem' ? 'list' : block.type
-    if (result === null) result = type
-    else if (result !== type) return 'mixed'
-  }
-  return result ?? 'paragraph'
-}
-
 /**
- * Returns the heading level if the entire selection is within a single heading.
+ * Returns the mark of the given type at the selection anchor, if any.
+ * Useful for reading attributes (e.g. the href of a link under the cursor).
  */
-export function getHeadingLevel(
-  doc: DocumentNode,
-  sel: ASTSelection,
-): 1 | 2 | 3 | 4 | 5 | 6 | null {
-  if (sel.anchor.blockId !== sel.head.blockId) return null
-  const block = doc.blocks[blockIndexOf(doc).get(sel.anchor.blockId) ?? -1]
-  return block?.type === 'heading' ? block.level : null
-}
-
-/**
- * Returns the list variant (ordered/unordered) if the selection anchor is
- * inside a listItem block, otherwise null.
- */
-export function getListType(doc: DocumentNode, sel: ASTSelection): 'ordered' | 'unordered' | null {
-  const block = doc.blocks[blockIndexOf(doc).get(sel.anchor.blockId) ?? -1]
-  if (block?.type !== 'listItem') return null
-  return block.ordered ? 'ordered' : 'unordered'
-}
-
-/**
- * Returns the href of the link mark at the selection anchor, or null if the
- * anchor is not inside a link.
- */
-export function getLinkHref(doc: DocumentNode, sel: ASTSelection): string | null {
+export function getMarkAt(doc: DocumentNode, sel: ASTSelection, mark: string): Mark | null {
   const pos = sel.anchor
   const block = doc.blocks[blockIndexOf(doc).get(pos.blockId) ?? -1]
   const node = block?.children[pos.inlineIndex]
   if (node?.type !== 'text') return null
-  const href = node.marks.find((m) => m.type === 'link')?.attrs?.href
-  return href ?? null
+  return node.marks.find((m) => m.type === mark) ?? null
+}
+
+/**
+ * Returns the block at the selection anchor, or null.
+ */
+export function getBlockAt(doc: DocumentNode, sel: ASTSelection): BlockNode | null {
+  const block = doc.blocks[blockIndexOf(doc).get(sel.anchor.blockId) ?? -1]
+  return block ?? null
 }
 
 export function isCursorAtBlockStart(sel: ASTSelection): boolean {

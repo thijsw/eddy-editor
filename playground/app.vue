@@ -9,6 +9,7 @@
         <h2 class="section-title">Editor</h2>
         <eddy-editor
           v-model="content"
+          :plugins="defaultPlugins"
           :disabled="isDisabled"
           placeholder="Start typing to see the placeholder disappear…"
         />
@@ -31,7 +32,7 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import { EddyEditor } from 'eddy-editor/vue'
+import { EddyEditor, defaultPlugins } from 'eddy-editor/vue'
 import HtmlPanel from './html-panel.vue'
 import AstPanel from './ast-panel.vue'
 

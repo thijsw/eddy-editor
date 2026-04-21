@@ -2,44 +2,68 @@
 //   import { EddyEditor } from 'eddy-editor/vue'
 //   import { EddyEditor } from 'eddy-editor/react'
 
-// Plugin authoring
-export { createPlugin } from './create-plugin'
+// Editor class (framework-agnostic consumers instantiate this directly)
+export { Editor } from './editor'
 
-// Built-in plugins — individual exports allow tree-shaking
+// Built-in plugins
 export {
   defaultPlugins,
+  defaultSchema,
+  safePaste,
+  core,
   bold,
   italic,
   underline,
   strikethrough,
   code,
   link,
-  unorderedList,
-  orderedList,
-  heading1,
-  heading2,
-  heading3,
-  heading4,
-  heading5,
-  heading6,
+  sanitizeHref,
+  heading,
+  list,
 } from './plugins/index'
 
 // Types
-export type { EditorAPI, EddyPlugin, ToolbarConfig } from './types'
 export type {
-  MarkType,
-  DocumentNode,
-  BlockNode,
-  InlineNode,
+  EditorAPI,
+  EddyPlugin,
+  ToolbarItem,
+  CommandFn,
+  EditorEvent,
+  EventHandlerMap,
+  PluginContext,
+  TransactionAPI,
+} from './types'
+export type {
+  Mark,
   TextNode,
   HardBreakNode,
-  ParagraphNode,
-  HeadingNode,
-  ListItemNode,
-  Mark,
+  InlineNode,
+  BlockNode,
+  DocumentNode,
 } from './ast/types'
 export type { ASTPosition, ASTSelection } from './ast/selection'
+export type {
+  Schema,
+  MarkSpec,
+  BlockSpec,
+  BlockGroupSpec,
+  AttrSpec,
+  DOMOutput,
+  SchemaRule,
+} from './ast/schema'
+export type { CommandResult } from './ast/commands'
 
 // AST utilities — for advanced consumers doing server-side processing
-export { parseHTML } from './ast/parse'
-export { serializeToHTML } from './ast/serialize'
+import { parseHTML as parseHTMLWithSchema } from './ast/parse'
+import { serializeToHTML as serializeToHTMLWithSchema } from './ast/serialize'
+import { defaultSchema } from './plugins/index'
+import type { DocumentNode } from './ast/types'
+import type { Schema } from './ast/schema'
+
+export function parseHTML(html: string, schema: Schema = defaultSchema()): DocumentNode {
+  return parseHTMLWithSchema(html, schema)
+}
+
+export function serializeToHTML(doc: DocumentNode, schema: Schema = defaultSchema()): string {
+  return serializeToHTMLWithSchema(doc, schema)
+}

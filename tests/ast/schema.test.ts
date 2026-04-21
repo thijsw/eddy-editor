@@ -31,14 +31,19 @@ describe('normalizeSiblingText', () => {
 
 describe('ensureNonEmptyBlocks', () => {
   it('adds empty text node to a paragraph with no children', () => {
-    const d = doc({ id: 'b0', type: 'paragraph', children: [] })
+    const d = doc({ id: 'b0', type: 'paragraph', attrs: {}, children: [] })
     const result = ensureNonEmptyBlocks(d)
     expect((result.blocks[0] as any).children.length).toBe(1)
     expect((result.blocks[0] as any).children[0].text).toBe('')
   })
 
   it('adds empty text to empty list items', () => {
-    const d = doc({ id: 'b0', type: 'listItem', indent: 0, ordered: false, children: [] })
+    const d = doc({
+      id: 'b0',
+      type: 'listItem',
+      attrs: { indent: 0, ordered: false },
+      children: [],
+    })
     const result = ensureNonEmptyBlocks(d)
     expect((result.blocks[0] as any).children.length).toBe(1)
   })

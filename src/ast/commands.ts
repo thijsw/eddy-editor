@@ -1,19 +1,9 @@
-import type {
-  BlockNode,
-  DocumentNode,
-  InlineNode,
-  ListItemNode,
-  Mark,
-  MarkAttrs,
-  MarkType,
-  ParagraphNode,
-  TextNode,
-} from './types'
+import type { BlockNode, DocumentNode, InlineNode, Mark, TextNode } from './types'
 import { generateId, emptyText, emptyParagraph, withChildren } from './types'
 import type { ASTPosition, ASTSelection } from './selection'
 import { blockIndexOf, collapsedAt, isCollapsed, normalizeSelection } from './selection'
 import { isMarkActive, isCursorAtBlockEnd, isCursorAtBlockStart } from './inspect'
-import { sanitizeHref } from './sanitize-href'
+import { attrsEqual } from './schema'
 
 export interface CommandResult {
   doc: DocumentNode
@@ -66,18 +56,18 @@ function inlineLen(node: InlineNode): number {
   return node.type === 'text' ? node.text.length : 1
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// ── Block helpers ─────────────────────────────────────────────────────────────
 
 function cursorAtBlock(block: BlockNode): ASTSelection {
   return collapsedAt({ blockId: block.id, inlineIndex: 0, offset: 0 })
 }
 
-function cloneListItem(src: ListItemNode, children: InlineNode[]): ListItemNode {
-  return { id: generateId(), type: 'listItem', ordered: src.ordered, indent: src.indent, children }
+function toParagraph(block: BlockNode, children = block.children): BlockNode {
+  return { id: block.id, type: 'paragraph', attrs: {}, children }
 }
 
-function toParagraph(block: BlockNode, children = block.children): ParagraphNode {
-  return { id: block.id, type: 'paragraph', children }
+function cloneBlock(src: BlockNode, children: InlineNode[]): BlockNode {
+  return { id: generateId(), type: src.type, attrs: { ...src.attrs }, children }
 }
 
 function isInlineEmpty(inlines: InlineNode[]): boolean {
@@ -87,7 +77,7 @@ function isInlineEmpty(inlines: InlineNode[]): boolean {
   )
 }
 
-function mapBlocksInRange(
+export function mapBlocksInRange(
   doc: DocumentNode,
   startIdx: number,
   endIdx: number,
@@ -99,7 +89,7 @@ function mapBlocksInRange(
   }
 }
 
-function blockRangeIdx(
+export function blockRangeIdx(
   doc: DocumentNode,
   sel: ASTSelection,
 ): [ASTPosition, ASTPosition, number, number] {
@@ -110,30 +100,35 @@ function blockRangeIdx(
 
 // ── toggleMark ────────────────────────────────────────────────────────────────
 
-export function toggleMark(doc: DocumentNode, sel: ASTSelection, mark: MarkType): CommandResult {
+export function toggleMark(
+  doc: DocumentNode,
+  sel: ASTSelection,
+  mark: string,
+  attrs?: Record<string, unknown>,
+  excludes?: ReadonlyArray<string>,
+): CommandResult {
   if (isCollapsed(sel)) return { doc, selection: sel }
 
   const active = isMarkActive(doc, sel, mark)
   const [start, end, startIdx, endIdx] = blockRangeIdx(doc, sel)
 
   const newDoc = mapBlocksInRange(doc, startIdx, endIdx, (block) =>
-    applyMarkToBlock(block, start, end, mark, active),
+    applyMarkToBlock(block, start, end, mark, active, attrs, excludes),
   )
   return { doc: newDoc, selection: remapSelection(doc, newDoc, sel) }
 }
 
-function applyMarkToBlock(
+export function applyMarkToBlock(
   block: BlockNode,
   start: ASTPosition,
   end: ASTPosition,
-  mark: MarkType,
+  mark: string,
   remove: boolean,
-  attrs?: MarkAttrs,
+  attrs?: Record<string, unknown>,
+  excludes?: ReadonlyArray<string>,
 ): BlockNode {
   const isStartBlock = block.id === start.blockId
   const isEndBlock = block.id === end.blockId
-  // Inlines at positions < firstInline or > lastInline are outside the
-  // selection within this block and must pass through unchanged.
   const firstInline = isStartBlock ? start.inlineIndex : 0
   const lastInline = isEndBlock ? end.inlineIndex : block.children.length - 1
   const result: InlineNode[] = []
@@ -154,7 +149,11 @@ function applyMarkToBlock(
 
     const selectedText = node.text.slice(textStart, textEnd)
     if (selectedText.length > 0) {
-      result.push({ type: 'text', text: selectedText, marks: nextMarks(node.marks, mark, remove, attrs) })
+      result.push({
+        type: 'text',
+        text: selectedText,
+        marks: nextMarks(node.marks, mark, remove, attrs, excludes),
+      })
     }
 
     if (textEnd < node.text.length) {
@@ -165,122 +164,44 @@ function applyMarkToBlock(
   return { ...block, children: result }
 }
 
-function nextMarks(current: Mark[], mark: MarkType, remove: boolean, attrs?: MarkAttrs): Mark[] {
+function nextMarks(
+  current: Mark[],
+  mark: string,
+  remove: boolean,
+  attrs?: Record<string, unknown>,
+  excludes?: ReadonlyArray<string>,
+): Mark[] {
   if (remove) return current.filter((m) => m.type !== mark)
-  // Replace any existing mark of the same type so attribute updates (e.g. a
-  // new link href) take effect. For attribute-free marks this is idempotent.
-  const withoutSameType = current.filter((m) => m.type !== mark)
-  const fresh: Mark = attrs ? { type: mark, attrs } : { type: mark }
-  return [...withoutSameType, fresh]
-}
-
-// ── Link commands ─────────────────────────────────────────────────────────────
-
-/**
- * Expands a collapsed cursor inside a link to cover the entire contiguous
- * run of text carrying the same link href. Returns null when the position
- * isn't inside a link.
- */
-function linkRangeAt(doc: DocumentNode, pos: ASTPosition): ASTSelection | null {
-  const block = doc.blocks[blockIndexOf(doc).get(pos.blockId) ?? -1]
-  if (!block) return null
-  const node = block.children[pos.inlineIndex]
-  if (node?.type !== 'text') return null
-  const href = node.marks.find((m) => m.type === 'link')?.attrs?.href
-  if (href === undefined) return null
-
-  const sameLink = (n: InlineNode): boolean =>
-    n.type === 'text' && n.marks.some((m) => m.type === 'link' && m.attrs?.href === href)
-
-  let startI = pos.inlineIndex
-  while (startI > 0 && sameLink(block.children[startI - 1])) startI--
-  let endI = pos.inlineIndex
-  while (endI < block.children.length - 1 && sameLink(block.children[endI + 1])) endI++
-
-  const endNode = block.children[endI] as TextNode
-  return {
-    anchor: { blockId: pos.blockId, inlineIndex: startI, offset: 0 },
-    head: { blockId: pos.blockId, inlineIndex: endI, offset: endNode.text.length },
-  }
-}
-
-/**
- * Applies a link mark with the given href across the selection. When the
- * selection is collapsed inside an existing link, the entire link range is
- * targeted so editing the href updates the whole anchor. A collapsed cursor
- * outside a link is a no-op — same shape as toggleMark.
- */
-export function setLink(doc: DocumentNode, sel: ASTSelection, href: string): CommandResult {
-  const safe = sanitizeHref(href)
-  if (safe === null) return { doc, selection: sel }
-
-  const effective = isCollapsed(sel) ? (linkRangeAt(doc, sel.anchor) ?? sel) : sel
-  if (isCollapsed(effective)) return { doc, selection: sel }
-
-  const [start, end, startIdx, endIdx] = blockRangeIdx(doc, effective)
-  const newDoc = mapBlocksInRange(doc, startIdx, endIdx, (block) =>
-    applyMarkToBlock(block, start, end, 'link', false, { href: safe }),
-  )
-  return { doc: newDoc, selection: remapSelection(doc, newDoc, sel) }
-}
-
-/**
- * Removes the link mark from the selection. A collapsed cursor inside a
- * link strips it from the whole link range; a collapsed cursor outside a
- * link is a no-op.
- */
-export function removeLink(doc: DocumentNode, sel: ASTSelection): CommandResult {
-  const effective = isCollapsed(sel) ? (linkRangeAt(doc, sel.anchor) ?? sel) : sel
-  if (isCollapsed(effective)) return { doc, selection: sel }
-
-  const [start, end, startIdx, endIdx] = blockRangeIdx(doc, effective)
-  const newDoc = mapBlocksInRange(doc, startIdx, endIdx, (block) =>
-    applyMarkToBlock(block, start, end, 'link', true),
-  )
-  return { doc: newDoc, selection: remapSelection(doc, newDoc, sel) }
+  const excluded = excludes && excludes.length > 0 ? new Set(excludes) : null
+  const kept = current.filter((m) => m.type !== mark && !(excluded && excluded.has(m.type)))
+  const fresh: Mark =
+    attrs && Object.keys(attrs).length > 0 ? { type: mark, attrs } : { type: mark }
+  return [...kept, fresh]
 }
 
 // ── setBlockType ──────────────────────────────────────────────────────────────
 
+/**
+ * Sets the type/attrs of every block in the selection. Per-block toggle: any
+ * block already matching `type` + `attrs` reverts to a paragraph. List items
+ * are not touched — convert them through toggleList first.
+ */
 export function setBlockType(
   doc: DocumentNode,
   sel: ASTSelection,
-  type: 'paragraph' | 'heading',
-  attrs?: { level?: 1 | 2 | 3 | 4 | 5 | 6 },
+  type: string,
+  attrs?: Record<string, unknown>,
 ): CommandResult {
   const [, , startIdx, endIdx] = blockRangeIdx(doc, sel)
-  const level = attrs?.level ?? 1
+  const target = attrs ?? {}
 
   const newDoc = mapBlocksInRange(doc, startIdx, endIdx, (block) => {
     if (block.type === 'listItem') return block
     if (type === 'paragraph') return toParagraph(block)
-    // Toggle: same heading level → paragraph
-    if (block.type === 'heading' && block.level === level) return toParagraph(block)
-    return { id: block.id, type: 'heading', level, children: block.children }
+    if (block.type === type && attrsEqual(block.attrs, target)) return toParagraph(block)
+    return { id: block.id, type, attrs: { ...target }, children: block.children }
   })
 
-  return { doc: newDoc, selection: sel }
-}
-
-// ── toggleList ────────────────────────────────────────────────────────────────
-
-export function toggleList(doc: DocumentNode, sel: ASTSelection, ordered: boolean): CommandResult {
-  const [, , startIdx, endIdx] = blockRangeIdx(doc, sel)
-
-  let allSameList = true
-  for (let i = startIdx; i <= endIdx; i++) {
-    const b = doc.blocks[i]
-    if (b.type !== 'listItem' || b.ordered !== ordered || b.indent !== 0) {
-      allSameList = false
-      break
-    }
-  }
-
-  const newDoc = mapBlocksInRange(doc, startIdx, endIdx, (block) =>
-    allSameList
-      ? toParagraph(block)
-      : { id: block.id, type: 'listItem', ordered, indent: 0, children: block.children },
-  )
   return { doc: newDoc, selection: sel }
 }
 
@@ -310,8 +231,7 @@ export function insertParagraph(doc: DocumentNode, sel: ASTSelection): CommandRe
   }
 
   if (isCursorAtBlockEnd(doc, sel)) {
-    const newBlock =
-      block.type === 'listItem' ? cloneListItem(block, [emptyText()]) : emptyParagraph()
+    const newBlock = block.type === 'listItem' ? cloneBlock(block, [emptyText()]) : emptyParagraph()
     blocks.splice(blockIdx + 1, 0, newBlock)
     return { doc: { type: 'document', blocks }, selection: cursorAtBlock(newBlock) }
   }
@@ -321,51 +241,15 @@ export function insertParagraph(doc: DocumentNode, sel: ASTSelection): CommandRe
   const afterInlines = after.length ? after : [emptyText()]
   const secondBlock: BlockNode =
     block.type === 'listItem'
-      ? cloneListItem(block, afterInlines)
-      : { id: generateId(), type: 'paragraph', children: afterInlines }
+      ? cloneBlock(block, afterInlines)
+      : { id: generateId(), type: 'paragraph', attrs: {}, children: afterInlines }
 
   blocks.splice(blockIdx, 1, firstBlock, secondBlock)
   return { doc: { type: 'document', blocks }, selection: cursorAtBlock(secondBlock) }
 }
 
-// ── insertHardBreak (Shift+Enter) ─────────────────────────────────────────────
-
-export function insertHardBreak(doc: DocumentNode, sel: ASTSelection): CommandResult {
-  if (!isCollapsed(sel)) {
-    const deleted = deleteContent(doc, sel)
-    return insertHardBreak(deleted.doc, deleted.selection)
-  }
-
-  const pos = sel.anchor
-  const blockIdx = blockIndexOf(doc).get(pos.blockId) ?? -1
-  const block = doc.blocks[blockIdx]
-  if (!block) return { doc, selection: sel }
-
-  const { before, after } = splitInlinesAt(block.children, pos.inlineIndex, pos.offset)
-  const newInlines: InlineNode[] = [
-    ...before,
-    { type: 'hardBreak' },
-    ...(after.length ? after : [emptyText()]),
-  ]
-
-  const newBlocks = [...doc.blocks]
-  newBlocks[blockIdx] = { ...block, children: newInlines }
-
-  return {
-    doc: { type: 'document', blocks: newBlocks },
-    selection: collapsedAt({ blockId: block.id, inlineIndex: before.length + 1, offset: 0 }),
-  }
-}
-
 // ── insertDocument (paste) ────────────────────────────────────────────────────
 
-/**
- * Splice a document's blocks into `doc` at the cursor. When the selection is
- * non-collapsed the range is deleted first. The first inserted block merges
- * its inlines into the cursor's block so text pastes flow inline; any
- * remaining blocks are inserted after. The cursor lands at the end of the
- * last merged/inserted content.
- */
 export function insertDocument(
   doc: DocumentNode,
   sel: ASTSelection,
@@ -385,68 +269,55 @@ export function insertDocument(
 
   const { before, after } = splitInlinesAt(target.children, pos.inlineIndex, pos.offset)
   const [firstInserted, ...restInserted] = inserted.blocks
-
-  // First inserted block's inlines merge into the cursor's block, preserving
-  // the target block type (a paste into a heading stays a heading).
-  const firstInlines = firstInserted.children.filter(
-    (n) => n.type !== 'text' || n.text.length > 0,
-  )
+  const firstInlines = meaningfulInlines(firstInserted.children)
+  const blocks = [...doc.blocks]
 
   if (restInserted.length === 0) {
-    const mergedInlines = [...before, ...firstInlines, ...after]
-    const mergedBlock = withChildren(target, mergedInlines.length ? mergedInlines : [emptyText()])
-    const blocks = [...doc.blocks]
-    blocks[blockIdx] = mergedBlock
-
-    // Cursor lands where the inserted content ends.
-    let inlineIndex = before.length + firstInlines.length
-    let offset = 0
-    if (firstInlines.length > 0) {
-      const lastInserted = firstInlines[firstInlines.length - 1]
-      inlineIndex = before.length + firstInlines.length - 1
-      offset = lastInserted.type === 'text' ? lastInserted.text.length : 1
-    } else if (before.length > 0) {
-      const lastBefore = before[before.length - 1]
-      inlineIndex = before.length - 1
-      offset = lastBefore.type === 'text' ? lastBefore.text.length : 1
-    }
-
+    const mergedInlines = [...before, ...firstInlines]
+    const combined = [...mergedInlines, ...after]
+    blocks[blockIdx] = withChildren(target, combined.length ? combined : [emptyText()])
     return {
       doc: { type: 'document', blocks },
-      selection: collapsedAt({ blockId: target.id, inlineIndex, offset }),
+      selection: cursorAt(target.id, endOfInlines(mergedInlines)),
     }
   }
 
-  // Multi-block paste: first block merges with `before`; last block merges
-  // with `after`; any middle blocks are inserted verbatim.
-  const firstMerged = withChildren(
-    target,
-    [...before, ...firstInlines].length ? [...before, ...firstInlines] : [emptyText()],
-  )
-
+  const firstHead = [...before, ...firstInlines]
+  const firstMerged = withChildren(target, firstHead.length ? firstHead : [emptyText()])
   const middleBlocks = restInserted.slice(0, -1).map((b) => ({ ...b, id: generateId() }))
-  const lastInsertedBlock = restInserted[restInserted.length - 1]
-  const lastInlines = lastInsertedBlock.children.filter(
-    (n) => n.type !== 'text' || n.text.length > 0,
-  )
+  const lastSrc = restInserted[restInserted.length - 1]
+  const lastInlines = meaningfulInlines(lastSrc.children)
   const lastChildren = [...lastInlines, ...after]
   const lastBlock: BlockNode = {
-    ...lastInsertedBlock,
+    ...lastSrc,
     id: generateId(),
     children: lastChildren.length ? lastChildren : [emptyText()],
   }
 
-  const blocks = [...doc.blocks]
   blocks.splice(blockIdx, 1, firstMerged, ...middleBlocks, lastBlock)
-
-  const inlineIndex = lastInlines.length > 0 ? lastInlines.length - 1 : 0
-  const lastAnchor = lastInlines[lastInlines.length - 1]
-  const offset = lastAnchor?.type === 'text' ? lastAnchor.text.length : 0
-
   return {
     doc: { type: 'document', blocks },
-    selection: collapsedAt({ blockId: lastBlock.id, inlineIndex, offset }),
+    selection: cursorAt(lastBlock.id, endOfInlines(lastInlines)),
   }
+}
+
+/** Drop empty text nodes, which carry no meaning when spliced into an existing block. */
+function meaningfulInlines(inlines: InlineNode[]): InlineNode[] {
+  return inlines.filter((n) => n.type !== 'text' || n.text.length > 0)
+}
+
+/** Cursor position at the end of an inline list. Empty list → start of block. */
+function endOfInlines(inlines: InlineNode[]): { inlineIndex: number; offset: number } {
+  if (inlines.length === 0) return { inlineIndex: 0, offset: 0 }
+  const last = inlines[inlines.length - 1]
+  return {
+    inlineIndex: inlines.length - 1,
+    offset: last.type === 'text' ? last.text.length : 1,
+  }
+}
+
+function cursorAt(blockId: string, at: { inlineIndex: number; offset: number }): ASTSelection {
+  return collapsedAt({ blockId, inlineIndex: at.inlineIndex, offset: at.offset })
 }
 
 // ── deleteContent ─────────────────────────────────────────────────────────────
@@ -482,9 +353,6 @@ export function deleteContent(doc: DocumentNode, sel: ASTSelection): CommandResu
     afterInlines.push(endBlock.children[i])
   }
 
-  // When deletion spans blocks of different types (e.g. paragraph + listItem),
-  // the merged block takes the type of the first block — the user started the
-  // selection there.
   const merged = [...beforeInlines, ...afterInlines]
   const mergedBlock = withChildren(startBlock, merged.length ? merged : [emptyText()])
   blocks.splice(startIdx, endIdx - startIdx + 1, mergedBlock)

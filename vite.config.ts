@@ -23,14 +23,7 @@ export default defineConfig({
       formats: ['es'],
     },
     rolldownOptions: {
-      external: [
-        'vue',
-        'react',
-        'react-dom',
-        'react/jsx-runtime',
-        '@lucide/vue',
-        'lucide-react',
-      ],
+      external: ['vue', 'react', 'react-dom', 'react/jsx-runtime', '@lucide/vue', 'lucide-react'],
     },
     sourcemap: true,
     emptyOutDir: true,

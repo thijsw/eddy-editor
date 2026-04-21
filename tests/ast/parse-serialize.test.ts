@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseHTML } from '../../src/ast/parse'
-import { serializeToHTML } from '../../src/ast/serialize'
+import { parseHTML, serializeToHTML } from '../../src/index'
 
 describe('parseHTML', () => {
   it('parses a simple paragraph', () => {
@@ -42,29 +41,29 @@ describe('parseHTML', () => {
   it('parses headings', () => {
     const doc = parseHTML('<h2>Title</h2>')
     expect(doc.blocks[0].type).toBe('heading')
-    expect((doc.blocks[0] as any).level).toBe(2)
+    expect((doc.blocks[0] as any).attrs.level).toBe(2)
   })
 
   it('parses unordered lists', () => {
     const doc = parseHTML('<ul><li>a</li><li>b</li></ul>')
     expect(doc.blocks.length).toBe(2)
     expect(doc.blocks[0].type).toBe('listItem')
-    expect((doc.blocks[0] as any).ordered).toBe(false)
+    expect((doc.blocks[0] as any).attrs.ordered).toBe(false)
     expect((doc.blocks[1] as any).type).toBe('listItem')
   })
 
   it('parses ordered lists', () => {
     const doc = parseHTML('<ol><li>one</li></ol>')
-    expect((doc.blocks[0] as any).ordered).toBe(true)
+    expect((doc.blocks[0] as any).attrs.ordered).toBe(true)
   })
 
   it('parses nested lists', () => {
     const doc = parseHTML('<ul><li>a<ul><li>b</li></ul></li></ul>')
     expect(doc.blocks.length).toBe(2)
     expect(doc.blocks[0].type).toBe('listItem')
-    expect((doc.blocks[0] as any).indent).toBe(0)
+    expect((doc.blocks[0] as any).attrs.indent).toBe(0)
     expect(doc.blocks[1].type).toBe('listItem')
-    expect((doc.blocks[1] as any).indent).toBe(1)
+    expect((doc.blocks[1] as any).attrs.indent).toBe(1)
   })
 
   it('parses <br> as hard break', () => {
@@ -113,8 +112,7 @@ describe('parseHTML', () => {
 
 describe('parseHTML — sanitisation', () => {
   it('strips style/class/id/onclick/data-* attributes from supported tags', () => {
-    const html =
-      '<p style="color:red" class="foo" id="bar" onclick="alert(1)" data-x="y">hello</p>'
+    const html = '<p style="color:red" class="foo" id="bar" onclick="alert(1)" data-x="y">hello</p>'
     expect(serializeToHTML(parseHTML(html))).toBe('<p>hello</p>')
   })
 

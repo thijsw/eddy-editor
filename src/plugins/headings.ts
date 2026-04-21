@@ -1,23 +1,57 @@
 import type { EddyPlugin } from '../types'
+import type { BlockSpec } from '../ast/schema'
 
 type Level = 1 | 2 | 3 | 4 | 5 | 6
 
-function heading(level: Level): EddyPlugin {
-  return {
-    name: `heading${level}`,
-    toolbar: { label: `H${level}`, title: `Heading ${level}` },
-    command(api) {
-      api.setBlockType('heading', { level })
-    },
-    isActive(api) {
-      return api.getHeadingLevel() === level
-    },
-  }
+function coerceLevel(value: unknown): Level | null {
+  const n = typeof value === 'number' ? value : Number(value)
+  return Number.isInteger(n) && n >= 1 && n <= 6 ? (n as Level) : null
 }
 
-export const heading1 = heading(1)
-export const heading2 = heading(2)
-export const heading3 = heading(3)
-export const heading4 = heading(4)
-export const heading5 = heading(5)
-export const heading6 = heading(6)
+const headingSpec: BlockSpec = {
+  type: 'heading',
+  parseDOM: [
+    { tag: 'h1' },
+    { tag: 'h2' },
+    { tag: 'h3' },
+    { tag: 'h4' },
+    { tag: 'h5' },
+    { tag: 'h6' },
+  ],
+  attrs: {
+    level: {
+      default: 1,
+      parseHTML: (el) => {
+        const m = /^h([1-6])$/i.exec(el.tagName)
+        return m ? Number(m[1]) : 1
+      },
+      validate: (value) => coerceLevel(value),
+    },
+  },
+  toDOM: (block) => [`h${coerceLevel(block.attrs.level) ?? 1}`],
+}
+
+/**
+ * One plugin that owns the `heading` block type end-to-end. Exposes
+ * `heading.set(level)` — per-block toggle: setting the current level reverts
+ * to a paragraph (see `setBlockType` in commands.ts).
+ *
+ * The heading-level dropdown in the default toolbar is a built-in UI element
+ * that reads block state via the generic `api.getBlockAt()` and dispatches
+ * through `api.setBlockType('heading', { level })` — the plugin doesn't
+ * contribute any toolbar items of its own.
+ */
+export const heading: EddyPlugin = {
+  name: 'heading',
+  blocks: [headingSpec],
+  commands: {
+    'heading.set': (api, levelArg) => {
+      const level = coerceLevel(levelArg)
+      if (level === null) {
+        api.setBlockType('paragraph')
+        return
+      }
+      api.setBlockType('heading', { level })
+    },
+  },
+}

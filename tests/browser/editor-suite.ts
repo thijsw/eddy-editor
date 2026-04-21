@@ -703,9 +703,7 @@ export function defineEditorSuite(mount: MountFn): void {
     const { getEmitted } = await mount('<p>start</p>')
     await placeCursorIn('start')
     await press('End')
-    dispatchPaste(
-      '<p style="color:red" class="mso">pasted <strong style="x">text</strong></p>',
-    )
+    dispatchPaste('<p style="color:red" class="mso">pasted <strong style="x">text</strong></p>')
     await tick()
     const output = getEmitted()
     expect(output).not.toContain('style=')

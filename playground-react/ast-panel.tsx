@@ -1,58 +1,35 @@
 import { Fragment, useMemo, type ReactNode } from 'react'
 import { parseHTML } from 'eddy-editor'
-import type { DocumentNode, BlockNode, InlineNode, ListItemNode, Mark } from 'eddy-editor'
+import type { DocumentNode, BlockNode, InlineNode, Mark } from 'eddy-editor'
 
-type TreeNode = DocumentNode | BlockNode | InlineNode | ListItemNode
+type TreeNode = DocumentNode | BlockNode | InlineNode
 
 function indent(depth: number): string {
   return '  '.repeat(depth)
 }
 
+function formatAttrs(attrs: Record<string, unknown>): string {
+  const entries = Object.entries(attrs)
+  if (entries.length === 0) return ''
+  return entries.map(([k, v]) => `${k}=${JSON.stringify(v)}`).join(' ')
+}
+
 function renderNode(node: TreeNode, depth: number, key: string): ReactNode {
-  if (node.type === 'document') {
+  if ('blocks' in node) {
+    const docNode = node as DocumentNode
     return (
       <Fragment key={key}>
-        <span className="ast-document">{indent(depth)}document{'\n'}</span>
-        {node.blocks.map((b, i) => renderNode(b, depth + 1, `${key}/${i}`))}
-      </Fragment>
-    )
-  }
-  if (node.type === 'paragraph') {
-    return (
-      <Fragment key={key}>
-        <span className="ast-block">{indent(depth)}paragraph </span>
-        <span className="ast-id">id={node.id}</span>
-        {'\n'}
-        {node.children.map((c, i) => renderNode(c, depth + 1, `${key}/${i}`))}
-      </Fragment>
-    )
-  }
-  if (node.type === 'heading') {
-    return (
-      <Fragment key={key}>
-        <span className="ast-block">{indent(depth)}heading </span>
-        <span className="ast-prop">level={node.level}</span>{' '}
-        <span className="ast-id">id={node.id}</span>
-        {'\n'}
-        {node.children.map((c, i) => renderNode(c, depth + 1, `${key}/${i}`))}
-      </Fragment>
-    )
-  }
-  if (node.type === 'listItem') {
-    return (
-      <Fragment key={key}>
-        <span className="ast-block">{indent(depth)}listItem </span>
-        <span className="ast-prop">
-          ordered={String(node.ordered)} indent={node.indent}
-        </span>{' '}
-        <span className="ast-id">id={node.id}</span>
-        {'\n'}
-        {node.children.map((c, i) => renderNode(c, depth + 1, `${key}/${i}`))}
+        <span className="ast-document">
+          {indent(depth)}document{'\n'}
+        </span>
+        {docNode.blocks.map((b, i) => renderNode(b, depth + 1, `${key}/${i}`))}
       </Fragment>
     )
   }
   if (node.type === 'text') {
-    const markStr = node.marks.length > 0 ? node.marks.map((m: Mark) => m.type).join(', ') : null
+    const textNode = node as Extract<InlineNode, { type: 'text' }>
+    const markStr =
+      textNode.marks.length > 0 ? textNode.marks.map((m: Mark) => m.type).join(', ') : null
     return (
       <Fragment key={key}>
         <span className="ast-inline">{indent(depth)}text </span>
@@ -61,7 +38,7 @@ function renderNode(node: TreeNode, depth: number, key: string): ReactNode {
             <span className="ast-mark">[{markStr}]</span>{' '}
           </>
         ) : null}
-        <span className="ast-text">"{node.text}"</span>
+        <span className="ast-text">"{textNode.text}"</span>
         {'\n'}
       </Fragment>
     )
@@ -69,11 +46,30 @@ function renderNode(node: TreeNode, depth: number, key: string): ReactNode {
   if (node.type === 'hardBreak') {
     return (
       <Fragment key={key}>
-        <span className="ast-inline">{indent(depth)}hardBreak{'\n'}</span>
+        <span className="ast-inline">
+          {indent(depth)}hardBreak{'\n'}
+        </span>
       </Fragment>
     )
   }
-  return null
+  const block = node as BlockNode
+  const attrStr = formatAttrs(block.attrs)
+  return (
+    <Fragment key={key}>
+      <span className="ast-block">
+        {indent(depth)}
+        {block.type}{' '}
+      </span>
+      {attrStr ? (
+        <>
+          <span className="ast-prop">{attrStr}</span>{' '}
+        </>
+      ) : null}
+      <span className="ast-id">id={block.id}</span>
+      {'\n'}
+      {block.children.map((c, i) => renderNode(c, depth + 1, `${key}/${i}`))}
+    </Fragment>
+  )
 }
 
 export function AstPanel({ html }: { html: string }) {
