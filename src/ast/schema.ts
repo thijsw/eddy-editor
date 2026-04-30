@@ -73,6 +73,18 @@ export interface BlockSpec {
   toDOM(block: BlockNode): DOMOutput
   attrs?: Record<string, AttrSpec>
   group?: BlockGroupSpec
+  /**
+   * Atom (leaf) block — rendered entirely by `toDOM`; the AST inline children
+   * are ignored visually. The renderer preserves the live DOM element across
+   * structural edits (so embedded media like iframes don't reload when the
+   * user adds an unrelated paragraph) and replaces the outer element wholesale
+   * when the block's own attrs change.
+   *
+   * The block still occupies a single cursor slot; selection lands at the
+   * block boundary. Plugins typically pair an atom block with a `keydown`
+   * handler that deletes it on Backspace from the following block.
+   */
+  atom?: boolean
 }
 
 export interface BlockGroupSpec {

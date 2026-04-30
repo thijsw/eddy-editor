@@ -96,6 +96,17 @@ export interface EditorAPI {
    * for programmatic content insertion.
    */
   insertHTML(html: string): void
+  /**
+   * Insert a new block at the cursor. The block type must be registered in
+   * the schema; the new block's id is assigned automatically and its inline
+   * children default to a single empty text node.
+   *
+   * Placement: replaces the current block if it's an empty paragraph,
+   * otherwise inserts after it. Cursor placement: inside the new block for
+   * regular blocks; for atom blocks the cursor moves into the next non-atom
+   * block (or a freshly created trailing paragraph if there isn't one).
+   */
+  insertBlock(spec: { type: string; attrs?: Record<string, unknown> }): void
 
   // History.
   undo(): void

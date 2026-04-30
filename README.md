@@ -9,7 +9,7 @@ A lightweight WYSIWYG text editor for Vue 3 and React. AST-based, zero runtime d
 - **Works with Vue and React** — framework-agnostic core, thin per-framework wrappers. Pick your import and go.
 - **AST document model** — content is a typed tree, not raw HTML. Pure functional commands transform it; a schema rule pass normalises after every mutation.
 - **Plugin-driven schema** — bold, italic, headings, lists, links, paragraphs — every node and mark type comes from a plugin contributing a `MarkSpec` or `BlockSpec`. Add a new block or mark in one plugin file, no core edits.
-- **Zero runtime dependencies** — your UI framework is the only peer dependency. <!-- BUNDLE_SIZE -->Vue **43.65 kB** min / **12.90 kB** gzip · React **42.83 kB** min / **12.55 kB** gzip<!-- /BUNDLE_SIZE -->.
+- **Zero runtime dependencies** — your UI framework is the only peer dependency. <!-- BUNDLE_SIZE -->Vue **47.74 kB** min / **14.03 kB** gzip · React **46.91 kB** min / **13.69 kB** gzip<!-- /BUNDLE_SIZE -->.
 - **Two-way binding** — `v-model` in Vue, `value` + `onChange` in React.
 - **Plugin lifecycle** — declarative schema + commands + keybindings + toolbar, plus an imperative `setup(ctx)` hook for event subscriptions, custom behaviour, or plugins that need to own their state.
 - **Event bus** — subscribe to `change`, `selectionchange`, `keydown`, `paste`, `destroy` on any `EditorAPI`.

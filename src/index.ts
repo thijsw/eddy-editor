@@ -53,6 +53,13 @@ export type {
 } from './ast/schema'
 export type { CommandResult } from './ast/commands'
 
+// AST helpers — for advanced plugins that drive their own transactions via
+// `tr.apply`. Most plugins won't need these: `editor.insertBlock` covers the
+// common block-insertion path, and atom-block deletion is built in.
+export { generateId, emptyText, emptyParagraph } from './ast/types'
+export { collapsedAt, blockIndexOf, isCollapsed, positionsEqual } from './ast/selection'
+export { isCursorAtBlockStart, isCursorAtBlockEnd } from './ast/inspect'
+
 // AST utilities — for advanced consumers doing server-side processing
 import { parseHTML as parseHTMLWithSchema } from './ast/parse'
 import { serializeToHTML as serializeToHTMLWithSchema } from './ast/serialize'

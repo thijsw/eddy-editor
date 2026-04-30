@@ -8,13 +8,18 @@ import type {
   TransactionAPI,
 } from './types'
 import type { BlockNode, DocumentNode, Mark } from './ast/types'
-import { emptyParagraph } from './ast/types'
+import { emptyParagraph, emptyText, generateId } from './ast/types'
 import type { ASTSelection } from './ast/selection'
-import { positionsEqual } from './ast/selection'
+import { blockIndexOf, collapsedAt, isCollapsed, positionsEqual } from './ast/selection'
 import type { Schema, MarkSpec, BlockSpec, SchemaRule } from './ast/schema'
 import { Schema as SchemaCls } from './ast/schema'
 import { parseHTML, parseLiveDOM } from './ast/parse'
-import { serializeToHTML, serializeToDOMHTML, serializeBlockInner } from './ast/serialize'
+import {
+  serializeToHTML,
+  serializeToDOMHTML,
+  serializeBlockInner,
+  serializeSingleBlock,
+} from './ast/serialize'
 import { readSelection, applySelection } from './ast/dom-mapping'
 import { applySchema, defaultRules } from './ast/schema'
 import { matchesKeybinding } from './matches-keybinding'
@@ -115,6 +120,56 @@ export class Editor implements EditorAPI {
 
   setBlockType(type: string, attrs?: Record<string, unknown>): void {
     this._apply((doc, sel) => cmd.setBlockType(doc, sel, type, attrs))
+  }
+
+  insertBlock(spec: { type: string; attrs?: Record<string, unknown> }): void {
+    const blockSpec = this._schema.blocks.get(spec.type)
+    if (!blockSpec) {
+      if (typeof console !== 'undefined') {
+        console.warn(`[eddy] insertBlock: unknown block type "${spec.type}"`)
+      }
+      return
+    }
+    this._apply((doc, sel) => {
+      const idx = blockIndexOf(doc).get(sel.anchor.blockId) ?? -1
+      if (idx < 0) return { doc, selection: sel }
+      const current = doc.blocks[idx]
+
+      const newBlock: BlockNode = {
+        id: generateId(),
+        type: spec.type,
+        attrs: spec.attrs ? { ...spec.attrs } : {},
+        children: [emptyText()],
+      }
+
+      const blocks = [...doc.blocks]
+      let insertedIdx: number
+      if (isEmptyParagraph(current)) {
+        blocks.splice(idx, 1, newBlock)
+        insertedIdx = idx
+      } else {
+        blocks.splice(idx + 1, 0, newBlock)
+        insertedIdx = idx + 1
+      }
+
+      let cursorBlock: BlockNode = newBlock
+      if (blockSpec.atom) {
+        const after = blocks[insertedIdx + 1]
+        const afterIsLandable = after && !this._schema.blocks.get(after.type)?.atom
+        if (afterIsLandable) {
+          cursorBlock = after
+        } else {
+          const trailing = emptyParagraph()
+          blocks.splice(insertedIdx + 1, 0, trailing)
+          cursorBlock = trailing
+        }
+      }
+
+      return {
+        doc: { type: 'document', blocks },
+        selection: collapsedAt({ blockId: cursorBlock.id, inlineIndex: 0, offset: 0 }),
+      }
+    })
   }
 
   // ── EditorAPI — inspection ────────────────────────────────────────────────
@@ -228,6 +283,9 @@ export class Editor implements EditorAPI {
     this._dispatch('keydown', event)
     if (event.defaultPrevented) return
 
+    if ((event.key === 'Backspace' || event.key === 'Delete') && this._handleAtomDeletion(event))
+      return
+
     for (const [key, cmdName] of this._keybindings) {
       if (matchesKeybinding(event, key)) {
         event.preventDefault()
@@ -235,6 +293,59 @@ export class Editor implements EditorAPI {
         return
       }
     }
+  }
+
+  /**
+   * Built-in atom-block deletion: Backspace at the start of the block after
+   * an atom (or Delete at the end of the block before one) removes the atom.
+   * Backspace/Delete with the cursor inside an atom block removes the block
+   * itself. Returns true when the event was handled.
+   *
+   * Plugins that want different behaviour can preventDefault in their own
+   * keydown handler; the dispatch loop short-circuits before this runs.
+   */
+  private _handleAtomDeletion(event: KeyboardEvent): boolean {
+    this._readSelectionFromDOM()
+    const sel = this._selection
+    if (!sel || !isCollapsed(sel)) return false
+    const idx = blockIndexOf(this._doc).get(sel.anchor.blockId) ?? -1
+    if (idx < 0) return false
+    const current = this._doc.blocks[idx]
+    const currentIsAtom = !!this._schema.blocks.get(current.type)?.atom
+
+    let targetIdx = -1
+    if (currentIsAtom) {
+      targetIdx = idx
+    } else if (
+      event.key === 'Backspace' &&
+      sel.anchor.inlineIndex === 0 &&
+      sel.anchor.offset === 0
+    ) {
+      const prev = this._doc.blocks[idx - 1]
+      if (prev && this._schema.blocks.get(prev.type)?.atom) targetIdx = idx - 1
+    } else if (event.key === 'Delete' && inspect.isCursorAtBlockEnd(this._doc, sel)) {
+      const next = this._doc.blocks[idx + 1]
+      if (next && this._schema.blocks.get(next.type)?.atom) targetIdx = idx + 1
+    }
+
+    if (targetIdx < 0) return false
+    event.preventDefault()
+    this._deleteBlockAt(targetIdx)
+    return true
+  }
+
+  private _deleteBlockAt(targetIdx: number): void {
+    this._apply((doc, sel) => {
+      if (targetIdx < 0 || targetIdx >= doc.blocks.length) return { doc, selection: sel }
+      const blocks = [...doc.blocks]
+      blocks.splice(targetIdx, 1)
+      if (blocks.length === 0) blocks.push(emptyParagraph())
+      const target = blocks[targetIdx] ?? blocks[targetIdx - 1] ?? blocks[0]
+      return {
+        doc: { type: 'document', blocks },
+        selection: collapsedAt({ blockId: target.id, inlineIndex: 0, offset: 0 }),
+      }
+    })
   }
 
   handlePaste(event: ClipboardEvent): void {
@@ -322,14 +433,102 @@ export class Editor implements EditorAPI {
         const newBlock = newDoc.blocks[i]
         if (oldBlock === newBlock) continue
         const blockEl = elementsById.get(newBlock.id)
-        if (blockEl) blockEl.innerHTML = serializeBlockInner(newBlock, this._schema)
+        if (!blockEl) continue
+        const spec = this._schema.blocks.get(newBlock.type)
+        if (spec?.atom) {
+          replaceAtomElement(blockEl, newBlock, this._schema)
+        } else {
+          blockEl.innerHTML = serializeBlockInner(newBlock, this._schema)
+        }
       }
     } else {
-      this._el.innerHTML = serializeToDOMHTML(newDoc, this._schema)
+      this._fullRender(oldDoc, newDoc)
     }
 
     this._updateEmptyAttr()
     if (newSel) applySelection(this._el, newSel)
+  }
+
+  /**
+   * Full re-render path used when the block list structure has changed
+   * (insertion, deletion, type change). Critical invariant: live atom-block
+   * elements (e.g. iframes) MUST stay attached to `_el` throughout. Detaching
+   * an iframe — even momentarily, even into a same-document fragment — and
+   * re-attaching it forces a navigation reload in WebKit/Blink.
+   *
+   * Strategy: identify which atom blocks are referentially unchanged in the
+   * new doc (so their visual content is identical), keep those elements
+   * exactly where they are, and rebuild the gaps around them. List/group
+   * containers (ul/ol) carry no atoms so they get rebuilt freely.
+   */
+  private _fullRender(oldDoc: DocumentNode, newDoc: DocumentNode): void {
+    const survivingAtomIds = new Set<string>()
+    for (const newBlock of newDoc.blocks) {
+      const spec = this._schema.blocks.get(newBlock.type)
+      if (!spec?.atom) continue
+      const oldBlock = oldDoc.blocks.find((b) => b.id === newBlock.id)
+      // Only treat the atom as "surviving" when its block reference is
+      // unchanged — that's the contract that the visual is identical and
+      // we can safely leave the live DOM in place.
+      if (oldBlock === newBlock) survivingAtomIds.add(newBlock.id)
+    }
+
+    if (survivingAtomIds.size === 0) {
+      this._el.innerHTML = serializeToDOMHTML(newDoc, this._schema)
+      return
+    }
+
+    const atomEls = new Map<string, Element>()
+    for (const id of survivingAtomIds) {
+      const el = this._el.querySelector(`[data-block-id="${id}"]`)
+      if (el) atomEls.set(id, el)
+    }
+
+    // Drop everything from `_el` except the surviving atoms. Atoms stay
+    // attached (just with siblings removed around them), so iframes don't
+    // navigate. List containers (ul/ol) have no data-block-id and are
+    // removed unconditionally — they'll be rebuilt by the segment renderer.
+    for (const child of Array.from(this._el.children)) {
+      const id = child.getAttribute('data-block-id')
+      if (id && atomEls.has(id)) continue
+      child.remove()
+    }
+
+    // Walk the new doc, partitioned at surviving atoms. Each "blocks"
+    // segment renders to HTML once and gets inserted as a fragment; each
+    // surviving atom is repositioned via insertBefore (same-parent move,
+    // no detach).
+    let cursorAfter: ChildNode | null = null
+    let pending: BlockNode[] = []
+
+    const flushPending = (): void => {
+      if (pending.length === 0) return
+      const html = serializeToDOMHTML({ type: 'document', blocks: pending }, this._schema)
+      const tmp = document.createElement('template')
+      tmp.innerHTML = html
+      const inserted = Array.from(tmp.content.children)
+      const ref = cursorAfter ? cursorAfter.nextSibling : this._el.firstChild
+      this._el.insertBefore(tmp.content, ref)
+      if (inserted.length > 0) cursorAfter = inserted[inserted.length - 1]
+      pending = []
+    }
+
+    for (const block of newDoc.blocks) {
+      if (survivingAtomIds.has(block.id)) {
+        flushPending()
+        const atomEl = atomEls.get(block.id)!
+        const expectedNext: ChildNode | null = cursorAfter
+          ? cursorAfter.nextSibling
+          : this._el.firstChild
+        if (atomEl !== expectedNext) {
+          this._el.insertBefore(atomEl, expectedNext)
+        }
+        cursorAfter = atomEl
+      } else {
+        pending.push(block)
+      }
+    }
+    flushPending()
   }
 
   private _scheduleHistoryPush(): void {
@@ -374,6 +573,20 @@ function canSurgicallyUpdate(oldDoc: DocumentNode, newDoc: DocumentNode): boolea
 
 function selectionsEqual(a: ASTSelection, b: ASTSelection): boolean {
   return positionsEqual(a.anchor, b.anchor) && positionsEqual(a.head, b.head)
+}
+
+function isEmptyParagraph(block: BlockNode): boolean {
+  if (block.type !== 'paragraph') return false
+  if (block.children.length !== 1) return false
+  const c = block.children[0]
+  return c.type === 'text' && c.text === ''
+}
+
+function replaceAtomElement(blockEl: Element, block: BlockNode, schema: Schema): void {
+  const tmp = document.createElement('template')
+  tmp.innerHTML = serializeSingleBlock(block, true, schema)
+  const fresh = tmp.content.firstElementChild
+  if (fresh) blockEl.replaceWith(fresh)
 }
 
 function buildSchema(plugins: EddyPlugin[]): Schema {

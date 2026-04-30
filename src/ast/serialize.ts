@@ -35,10 +35,12 @@ function serializeInlinesOrBR(nodes: InlineNode[], schema: Schema): string {
   return html === '' ? '<br>' : html
 }
 
-function serializeSingleBlock(block: BlockNode, withIds: boolean, schema: Schema): string {
-  const inner = serializeInlinesOrBR(block.children, schema)
-  const extra = withIds ? { 'data-block-id': block.id } : undefined
+export function serializeSingleBlock(block: BlockNode, withIds: boolean, schema: Schema): string {
   const spec = schema.blocks.get(block.type)
+  // Atom blocks render entirely from toDOM — the AST inline children (a
+  // single empty text node, by schema invariant) are not visualised.
+  const inner = spec?.atom ? '' : serializeInlinesOrBR(block.children, schema)
+  const extra = withIds ? { 'data-block-id': block.id } : undefined
   const output: DOMOutput = spec ? spec.toDOM(block) : ['p']
   return renderDOM(output, inner, extra)
 }
@@ -61,6 +63,7 @@ function renderDOM(output: DOMOutput, inner: string, extraAttrs?: Record<string,
 
   // No explicit children — the tag wraps the inner content directly.
   if (childStart >= output.length) {
+    if (VOID_TAGS.has(tag)) return `<${tag}${attrStr}>`
     return `<${tag}${attrStr}>${inner}</${tag}>`
   }
 
@@ -121,6 +124,23 @@ function renderBlocks(blocks: BlockNode[], withIds: boolean, schema: Schema): st
 
   return html
 }
+
+// HTML void elements: cannot have children, must not have a closing tag.
+const VOID_TAGS = new Set([
+  'area',
+  'base',
+  'br',
+  'col',
+  'embed',
+  'hr',
+  'img',
+  'input',
+  'link',
+  'meta',
+  'source',
+  'track',
+  'wbr',
+])
 
 function escapeHTML(text: string): string {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
