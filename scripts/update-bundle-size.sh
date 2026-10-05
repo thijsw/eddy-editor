@@ -19,7 +19,7 @@ fi
 
 # All *.js files in dist/ that are not framework entries count as shared chunks
 # (both eddy-editor/vue and eddy-editor/react statically import them).
-entry_files="index.js vue.js react.js"
+entry_files="index.js vue.js react.js nuxt.js"
 shared_chunks=""
 for f in "$DIST"/*.js; do
   base="$(basename "$f")"

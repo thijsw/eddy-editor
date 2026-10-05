@@ -20,7 +20,8 @@
     "rich-text",
     "contenteditable",
     "vue3",
-    "ast"
+    "ast",
+    "nuxt"
   ],
   "files": [
     "dist",
@@ -49,6 +50,10 @@
       "import": "./dist/react.js",
       "types": "./dist/react.d.ts"
     },
+    "./nuxt": {
+      "import": "./dist/nuxt.js",
+      "types": "./dist/nuxt.d.ts"
+    },
     "./style.css": "./style.css"
   },
   "scripts": {
@@ -70,6 +75,7 @@
   },
   "peerDependencies": {
     "@lucide/vue": "^1.0.0",
+    "@nuxt/kit": "^3.0.0 || ^4.0.0",
     "lucide-react": "^0.400.0",
     "react": "^18.0.0 || ^19.0.0",
     "react-dom": "^18.0.0 || ^19.0.0",
@@ -77,6 +83,9 @@
   },
   "peerDependenciesMeta": {
     "@lucide/vue": {
+      "optional": true
+    },
+    "@nuxt/kit": {
       "optional": true
     },
     "lucide-react": {
@@ -95,6 +104,8 @@
   "devDependencies": {
     "@changesets/cli": "^2.31.0",
     "@lucide/vue": "^1.8.0",
+    "@nuxt/kit": "^4.5.2",
+    "@nuxt/schema": "^4.5.2",
     "@types/node": "^25.6.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
