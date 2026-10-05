@@ -23,6 +23,7 @@ A lightweight WYSIWYG text editor for Vue 3 and React. AST-based, zero runtime d
 
 - **Vue 3** — [docs/vue.md](docs/vue.md)
 - **React 18 / 19** — [docs/react.md](docs/react.md)
+- **Nuxt 3 / 4** — [docs/vue.md#nuxt](docs/vue.md#nuxt)
 
 ## Keyboard shortcuts
 
@@ -272,6 +273,7 @@ const schema = new Schema(
 eddy-editor            # framework-agnostic core: Editor, plugins, AST, Schema, types
 eddy-editor/vue        # Vue 3 components + useEditorState composable
 eddy-editor/react      # React components + useEditorState hook
+eddy-editor/nuxt       # Nuxt module: bundles the Vue entry with the app (docs/vue.md#nuxt)
 eddy-editor/style.css  # default stylesheet
 ```
 
