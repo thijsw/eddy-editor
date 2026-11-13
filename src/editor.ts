@@ -1,600 +1,384 @@
-import type {
-  CommandFn,
-  EddyPlugin,
-  EditorAPI,
-  EditorEvent,
-  EventHandlerMap,
-  PluginContext,
-  TransactionAPI,
-} from './types'
-import type { BlockNode, DocumentNode, Mark } from './ast/types'
-import { emptyParagraph, emptyText, generateId } from './ast/types'
-import type { ASTSelection } from './ast/selection'
-import { blockIndexOf, collapsedAt, isCollapsed, positionsEqual } from './ast/selection'
-import type { Schema, MarkSpec, BlockSpec, SchemaRule } from './ast/schema'
-import { Schema as SchemaCls } from './ast/schema'
-import { parseHTML, parseLiveDOM } from './ast/parse'
+import type { Block, Doc, Selection, TextNode, Transform } from './model'
 import {
-  serializeToHTML,
-  serializeToDOMHTML,
-  serializeBlockInner,
-  serializeSingleBlock,
-} from './ast/serialize'
-import { readSelection, applySelection } from './ast/dom-mapping'
-import { applySchema, defaultRules } from './ast/schema'
-import { matchesKeybinding } from './matches-keybinding'
-import * as cmd from './ast/commands'
-import * as inspect from './ast/inspect'
-import * as history from './ast/history'
+  caret,
+  createBlock,
+  eq,
+  indexOf,
+  isCollapsed,
+  markRange,
+  marksAt,
+  range,
+  slice,
+  textLength,
+} from './model'
+import { createSchema, normalize, parse, serialize } from './schema'
+import { applySelection, readSelection } from './dom'
+import type { Editor, EditorOptions, KeyHandler } from './types'
 
-type EmitFn = (html: string) => void
+const ID = 'data-block-id'
+// set() modes
+const COMMAND = 0 // render, record history
+const INPUT = 1 // DOM already updated by the browser; debounce history
+const LOAD = 2 // render, reset history
+const HISTORY = 3 // render only
 
-export class Editor implements EditorAPI {
-  private _doc: DocumentNode
-  private _selection: ASTSelection | null = null
-  private _history: history.HistoryStack
-  private _historyDebounce: ReturnType<typeof setTimeout> | null = null
+function matches(e: KeyboardEvent, binding: string): boolean {
+  const mods = binding.split('+')
+  const key = mods.pop()
+  // "mod" accepts Cmd or Ctrl, so bindings work regardless of platform sniffing.
+  return (
+    e.key.toLowerCase() == key &&
+    (mods.includes('mod') ? e.metaKey || e.ctrlKey : !(e.metaKey || e.ctrlKey)) &&
+    e.shiftKey == mods.includes('shift') &&
+    e.altKey == mods.includes('alt')
+  )
+}
 
-  private readonly _schema: Schema
-  private readonly _rules: SchemaRule[]
-  private readonly _commands: Map<string, CommandFn> = new Map()
-  private readonly _keybindings: Map<string, string> = new Map()
-  private readonly _listeners: Map<EditorEvent, Set<(...args: never[]) => void>> = new Map()
-  private readonly _cleanups: Array<() => void> = []
-  private _onDocSelectionChange: (() => void) | null = null
+export function createEditor(el: HTMLElement, opts: EditorOptions = {}): Editor {
+  const plugins = opts.plugins || []
+  const schema = createSchema(plugins)
+  const spec = (b: Block) => schema.blocks[b.type] || schema.blocks.paragraph
+  const atom = (b?: Block) => !!b && !!spec(b).atom
 
-  constructor(
-    private readonly _el: HTMLElement,
-    private readonly _emit: EmitFn,
-    plugins: EddyPlugin[],
-  ) {
-    this._schema = buildSchema(plugins)
-    this._rules = [...defaultRules, ...plugins.flatMap((p) => p.schemaRules ?? [])]
-    this._doc = { type: 'document', blocks: [emptyParagraph()] }
-    this._history = history.create(this._doc, null)
+  let doc: Doc = []
+  let sel: Selection | null = null
+  let shown = new Map<string, Block>() // id → block its element currently displays
+  let html = ''
+  let hist: [Doc, Selection | null][] = []
+  let at = -1
+  let timer: ReturnType<typeof setTimeout> | 0 = 0
+  let composing = false
+  const subs = new Set<() => void>()
+  const cleanups: (() => void)[] = []
+  const ac = new AbortController()
+  const on = (t: EventTarget, type: string, f: (e: any) => void) =>
+    t.addEventListener(type, f, { signal: ac.signal })
+  const notify = () => subs.forEach((f) => f())
 
-    for (const plugin of plugins) {
-      if (plugin.commands) {
-        for (const [name, fn] of Object.entries(plugin.commands)) {
-          this._commands.set(name, fn)
-        }
-      }
-      if (plugin.keybindings) {
-        for (const [key, cmdName] of Object.entries(plugin.keybindings)) {
-          this._keybindings.set(key.toLowerCase(), cmdName)
-        }
-      }
+  const valid = (s: Selection | null) =>
+    s && indexOf(doc, s.anchor.block) >= 0 && indexOf(doc, s.head.block) >= 0 ? s : null
+  const current = () => valid(readSelection(el)) || valid(sel)
+
+  const record = () => {
+    clearTimeout(timer)
+    timer = 0
+    hist = hist.slice(0, at + 1)
+    hist.push([doc, sel])
+    if (hist.length > 100) hist.shift()
+    at = hist.length - 1
+  }
+
+  function render(d: Doc) {
+    // Reuse the element of every top-level block whose content is unchanged;
+    // render the rest. Reused elements are never detached (iframes survive).
+    const keep = new Map<Block, Element>()
+    for (const c of el.children) {
+      const b = shown.get(c.getAttribute(ID)!)
+      if (b) keep.set(b, c)
     }
-
-    const ctx: PluginContext = {
-      editor: this,
-      registerCommand: (name: string, fn: CommandFn): (() => void) => {
-        this._commands.set(name, fn)
-        return () => this._commands.delete(name)
-      },
-    }
-
-    for (const plugin of plugins) {
-      if (plugin.setup) {
-        const cleanup = plugin.setup(ctx)
-        if (cleanup) this._cleanups.push(cleanup)
-      }
-    }
-
-    if (typeof document !== 'undefined') {
-      this._onDocSelectionChange = () => this._readSelectionFromDOM()
-      document.addEventListener('selectionchange', this._onDocSelectionChange)
-    }
-  }
-
-  // ── EditorAPI — properties ────────────────────────────────────────────────
-
-  get el(): HTMLElement {
-    return this._el
-  }
-
-  get doc(): DocumentNode {
-    return this._doc
-  }
-
-  get selection(): ASTSelection | null {
-    return this._selection
-  }
-
-  get schema(): Schema {
-    return this._schema
-  }
-
-  get tr(): TransactionAPI {
-    return {
-      apply: (fn) => this._apply(fn),
-    }
-  }
-
-  // ── EditorAPI — mutation primitives ───────────────────────────────────────
-
-  toggleMark(type: string, attrs?: Record<string, unknown>): void {
-    const excludes = this._schema.marks.get(type)?.excludes
-    this._apply((doc, sel) => cmd.toggleMark(doc, sel, type, attrs, excludes))
-  }
-
-  setBlockType(type: string, attrs?: Record<string, unknown>): void {
-    this._apply((doc, sel) => cmd.setBlockType(doc, sel, type, attrs))
-  }
-
-  insertBlock(spec: { type: string; attrs?: Record<string, unknown> }): void {
-    const blockSpec = this._schema.blocks.get(spec.type)
-    if (!blockSpec) {
-      if (typeof console !== 'undefined') {
-        console.warn(`[eddy] insertBlock: unknown block type "${spec.type}"`)
-      }
-      return
-    }
-    this._apply((doc, sel) => {
-      const idx = blockIndexOf(doc).get(sel.anchor.blockId) ?? -1
-      if (idx < 0) return { doc, selection: sel }
-      const current = doc.blocks[idx]
-
-      const newBlock: BlockNode = {
-        id: generateId(),
-        type: spec.type,
-        attrs: spec.attrs ? { ...spec.attrs } : {},
-        children: [emptyText()],
-      }
-
-      const blocks = [...doc.blocks]
-      let insertedIdx: number
-      if (isEmptyParagraph(current)) {
-        blocks.splice(idx, 1, newBlock)
-        insertedIdx = idx
-      } else {
-        blocks.splice(idx + 1, 0, newBlock)
-        insertedIdx = idx + 1
-      }
-
-      let cursorBlock: BlockNode = newBlock
-      if (blockSpec.atom) {
-        const after = blocks[insertedIdx + 1]
-        const afterIsLandable = after && !this._schema.blocks.get(after.type)?.atom
-        if (afterIsLandable) {
-          cursorBlock = after
-        } else {
-          const trailing = emptyParagraph()
-          blocks.splice(insertedIdx + 1, 0, trailing)
-          cursorBlock = trailing
-        }
-      }
-
-      return {
-        doc: { type: 'document', blocks },
-        selection: collapsedAt({ blockId: cursorBlock.id, inlineIndex: 0, offset: 0 }),
-      }
-    })
-  }
-
-  // ── EditorAPI — inspection ────────────────────────────────────────────────
-
-  isMarkActive(type: string): boolean {
-    this._readSelectionFromDOM()
-    return this._selection ? inspect.isMarkActive(this._doc, this._selection, type) : false
-  }
-
-  getMarkAt(type: string): Mark | null {
-    this._readSelectionFromDOM()
-    return this._selection ? inspect.getMarkAt(this._doc, this._selection, type) : null
-  }
-
-  getBlockAt(): BlockNode | null {
-    this._readSelectionFromDOM()
-    return this._selection ? inspect.getBlockAt(this._doc, this._selection) : null
-  }
-
-  // ── EditorAPI — command dispatch ──────────────────────────────────────────
-
-  run(command: string, ...args: unknown[]): void {
-    const fn = this._commands.get(command)
-    if (!fn) {
-      if (typeof console !== 'undefined') console.warn(`[eddy] unknown command: ${command}`)
-      return
-    }
-    fn(this, ...args)
-  }
-
-  on<E extends EditorEvent>(event: E, handler: EventHandlerMap[E]): () => void {
-    return this._subscribe(event, handler as (...args: never[]) => void)
-  }
-
-  // ── Editor lifecycle (not part of EditorAPI) ──────────────────────────────
-
-  loadHTML(html: string): void {
-    this._doc = applySchema(parseHTML(html, this._schema), this._rules)
-    this._selection = null
-    this._history = history.create(this._doc, null)
-    this._el.innerHTML = serializeToDOMHTML(this._doc, this._schema)
-    this._updateEmptyAttr()
-    this._emitCanonical()
-  }
-
-  isEmpty(): boolean {
-    const { blocks } = this._doc
-    if (blocks.length !== 1) return false
-    const b = blocks[0]
-    if (b.type !== 'paragraph') return false
-    for (const node of b.children) {
-      if (node.type === 'text' && node.text !== '') return false
-    }
-    return true
-  }
-
-  syncFromDOM(): void {
-    this._doc = applySchema(parseLiveDOM(this._el, this._schema), this._rules)
-    this._selection = readSelection(this._el)
-    this._scheduleHistoryPush()
-    this._updateEmptyAttr()
-    this._emitCanonical()
-  }
-
-  insertHTML(html: string): void {
-    const inserted = parseHTML(html, this._schema)
-    if (inserted.blocks.length === 0) return
-    this._apply((doc, sel) => cmd.insertDocument(doc, sel, inserted))
-  }
-
-  pushHistory(): void {
-    this._readSelectionFromDOM()
-    this._flushHistoryDebounce()
-  }
-
-  undo(): void {
-    this._flushHistoryDebounce()
-    const result = history.undo(this._history)
-    if (!result) return
-    this._history = result
-    this._restore(history.current(this._history))
-  }
-
-  redo(): void {
-    const result = history.redo(this._history)
-    if (!result) return
-    this._history = result
-    this._restore(history.current(this._history))
-  }
-
-  destroy(): void {
-    this._flushHistoryDebounce()
-    if (this._onDocSelectionChange && typeof document !== 'undefined') {
-      document.removeEventListener('selectionchange', this._onDocSelectionChange)
-      this._onDocSelectionChange = null
-    }
-    for (const cleanup of this._cleanups.splice(0)) {
-      try {
-        cleanup()
-      } catch (err) {
-        if (typeof console !== 'undefined') console.error('[eddy] plugin cleanup failed:', err)
-      }
-    }
-    this._dispatch('destroy')
-    this._listeners.clear()
-  }
-
-  // ── Raw event hooks (framework wrappers call these) ───────────────────────
-
-  handleKeydown(event: KeyboardEvent): void {
-    this._dispatch('keydown', event)
-    if (event.defaultPrevented) return
-
-    if ((event.key === 'Backspace' || event.key === 'Delete') && this._handleAtomDeletion(event))
-      return
-
-    for (const [key, cmdName] of this._keybindings) {
-      if (matchesKeybinding(event, key)) {
-        event.preventDefault()
-        this.run(cmdName)
-        return
-      }
-    }
-  }
-
-  /**
-   * Built-in atom-block deletion: Backspace at the start of the block after
-   * an atom (or Delete at the end of the block before one) removes the atom.
-   * Backspace/Delete with the cursor inside an atom block removes the block
-   * itself. Returns true when the event was handled.
-   *
-   * Plugins that want different behaviour can preventDefault in their own
-   * keydown handler; the dispatch loop short-circuits before this runs.
-   */
-  private _handleAtomDeletion(event: KeyboardEvent): boolean {
-    this._readSelectionFromDOM()
-    const sel = this._selection
-    if (!sel || !isCollapsed(sel)) return false
-    const idx = blockIndexOf(this._doc).get(sel.anchor.blockId) ?? -1
-    if (idx < 0) return false
-    const current = this._doc.blocks[idx]
-    const currentIsAtom = !!this._schema.blocks.get(current.type)?.atom
-
-    let targetIdx = -1
-    if (currentIsAtom) {
-      targetIdx = idx
-    } else if (
-      event.key === 'Backspace' &&
-      sel.anchor.inlineIndex === 0 &&
-      sel.anchor.offset === 0
-    ) {
-      const prev = this._doc.blocks[idx - 1]
-      if (prev && this._schema.blocks.get(prev.type)?.atom) targetIdx = idx - 1
-    } else if (event.key === 'Delete' && inspect.isCursorAtBlockEnd(this._doc, sel)) {
-      const next = this._doc.blocks[idx + 1]
-      if (next && this._schema.blocks.get(next.type)?.atom) targetIdx = idx + 1
-    }
-
-    if (targetIdx < 0) return false
-    event.preventDefault()
-    this._deleteBlockAt(targetIdx)
-    return true
-  }
-
-  private _deleteBlockAt(targetIdx: number): void {
-    this._apply((doc, sel) => {
-      if (targetIdx < 0 || targetIdx >= doc.blocks.length) return { doc, selection: sel }
-      const blocks = [...doc.blocks]
-      blocks.splice(targetIdx, 1)
-      if (blocks.length === 0) blocks.push(emptyParagraph())
-      const target = blocks[targetIdx] ?? blocks[targetIdx - 1] ?? blocks[0]
-      return {
-        doc: { type: 'document', blocks },
-        selection: collapsedAt({ blockId: target.id, inlineIndex: 0, offset: 0 }),
-      }
-    })
-  }
-
-  handlePaste(event: ClipboardEvent): void {
-    this._dispatch('paste', event)
-  }
-
-  // ── Private — event bus ───────────────────────────────────────────────────
-
-  private _subscribe(event: EditorEvent, handler: (...args: never[]) => void): () => void {
-    let set = this._listeners.get(event)
-    if (!set) {
-      set = new Set()
-      this._listeners.set(event, set)
-    }
-    set.add(handler)
-    return () => set!.delete(handler)
-  }
-
-  private _dispatch<E extends EditorEvent>(
-    event: E,
-    ...args: Parameters<EventHandlerMap[E]>
-  ): void {
-    const set = this._listeners.get(event)
-    if (!set) return
-    for (const handler of set) (handler as (...a: unknown[]) => void)(...args)
-  }
-
-  // ── Private — apply / render ──────────────────────────────────────────────
-
-  private _apply(
-    command: (
-      doc: DocumentNode,
-      sel: ASTSelection,
-    ) => { doc: DocumentNode; selection: ASTSelection },
-  ): void {
-    this._readSelectionFromDOM()
-    if (!this._selection) return
-    this._flushHistoryDebounce()
-
-    const oldDoc = this._doc
-    const oldSel = this._selection
-    const result = command(this._doc, this._selection)
-    const normalized = applySchema(result.doc, this._rules)
-    const newSel = cmd.remapSelection(result.doc, normalized, result.selection)
-    this._render(oldDoc, normalized, newSel)
-    this._history = history.push(this._history, normalized, newSel)
-    this._emitCanonical()
-    if (!oldSel || !selectionsEqual(oldSel, newSel)) this._dispatch('selectionchange', newSel)
-  }
-
-  private _restore(entry: history.HistoryEntry): void {
-    this._render(this._doc, entry.doc, entry.selection)
-    this._emitCanonical()
-  }
-
-  private _emitCanonical(): void {
-    const html = serializeToHTML(this._doc, this._schema)
-    this._emit(html)
-    this._dispatch('change', html)
-  }
-
-  private _readSelectionFromDOM(): void {
-    const sel = readSelection(this._el)
-    if (!sel) return
-    if (this._selection && selectionsEqual(this._selection, sel)) return
-    this._selection = sel
-    this._dispatch('selectionchange', sel)
-  }
-
-  private _updateEmptyAttr(): void {
-    this._el.toggleAttribute('data-empty', this.isEmpty())
-  }
-
-  private _render(oldDoc: DocumentNode, newDoc: DocumentNode, newSel: ASTSelection | null): void {
-    this._doc = newDoc
-    this._selection = newSel
-
-    if (canSurgicallyUpdate(oldDoc, newDoc)) {
-      const elementsById = new Map<string, Element>()
-      for (const el of this._el.querySelectorAll('[data-block-id]')) {
-        elementsById.set(el.getAttribute('data-block-id')!, el)
-      }
-      for (let i = 0; i < newDoc.blocks.length; i++) {
-        const oldBlock = oldDoc.blocks[i]
-        const newBlock = newDoc.blocks[i]
-        if (oldBlock === newBlock) continue
-        const blockEl = elementsById.get(newBlock.id)
-        if (!blockEl) continue
-        const spec = this._schema.blocks.get(newBlock.type)
-        if (spec?.atom) {
-          replaceAtomElement(blockEl, newBlock, this._schema)
-        } else {
-          blockEl.innerHTML = serializeBlockInner(newBlock, this._schema)
-        }
-      }
-    } else {
-      this._fullRender(oldDoc, newDoc)
-    }
-
-    this._updateEmptyAttr()
-    if (newSel) applySelection(this._el, newSel)
-  }
-
-  /**
-   * Full re-render path used when the block list structure has changed
-   * (insertion, deletion, type change). Critical invariant: live atom-block
-   * elements (e.g. iframes) MUST stay attached to `_el` throughout. Detaching
-   * an iframe — even momentarily, even into a same-document fragment — and
-   * re-attaching it forces a navigation reload in WebKit/Blink.
-   *
-   * Strategy: identify which atom blocks are referentially unchanged in the
-   * new doc (so their visual content is identical), keep those elements
-   * exactly where they are, and rebuild the gaps around them. List/group
-   * containers (ul/ol) carry no atoms so they get rebuilt freely.
-   */
-  private _fullRender(oldDoc: DocumentNode, newDoc: DocumentNode): void {
-    const survivingAtomIds = new Set<string>()
-    for (const newBlock of newDoc.blocks) {
-      const spec = this._schema.blocks.get(newBlock.type)
-      if (!spec?.atom) continue
-      const oldBlock = oldDoc.blocks.find((b) => b.id === newBlock.id)
-      // Only treat the atom as "surviving" when its block reference is
-      // unchanged — that's the contract that the visual is identical and
-      // we can safely leave the live DOM in place.
-      if (oldBlock === newBlock) survivingAtomIds.add(newBlock.id)
-    }
-
-    if (survivingAtomIds.size === 0) {
-      this._el.innerHTML = serializeToDOMHTML(newDoc, this._schema)
-      return
-    }
-
-    const atomEls = new Map<string, Element>()
-    for (const id of survivingAtomIds) {
-      const el = this._el.querySelector(`[data-block-id="${id}"]`)
-      if (el) atomEls.set(id, el)
-    }
-
-    // Drop everything from `_el` except the surviving atoms. Atoms stay
-    // attached (just with siblings removed around them), so iframes don't
-    // navigate. List containers (ul/ol) have no data-block-id and are
-    // removed unconditionally — they'll be rebuilt by the segment renderer.
-    for (const child of Array.from(this._el.children)) {
-      const id = child.getAttribute('data-block-id')
-      if (id && atomEls.has(id)) continue
-      child.remove()
-    }
-
-    // Walk the new doc, partitioned at surviving atoms. Each "blocks"
-    // segment renders to HTML once and gets inserted as a fragment; each
-    // surviving atom is repositioned via insertBefore (same-parent move,
-    // no detach).
-    let cursorAfter: ChildNode | null = null
-    let pending: BlockNode[] = []
-
-    const flushPending = (): void => {
-      if (pending.length === 0) return
-      const html = serializeToDOMHTML({ type: 'document', blocks: pending }, this._schema)
-      const tmp = document.createElement('template')
-      tmp.innerHTML = html
-      const inserted = Array.from(tmp.content.children)
-      const ref = cursorAfter ? cursorAfter.nextSibling : this._el.firstChild
-      this._el.insertBefore(tmp.content, ref)
-      if (inserted.length > 0) cursorAfter = inserted[inserted.length - 1]
+    const nodes: Node[] = []
+    let pending: Doc = []
+    const flush = () => {
+      if (!pending.length) return
+      const t = document.createElement('template')
+      t.innerHTML = serialize(pending, schema, true)
+      nodes.push(...t.content.childNodes)
       pending = []
     }
+    for (const b of d) {
+      const e = !spec(b).group && keep.get(b)
+      if (e) {
+        flush()
+        nodes.push(e)
+      } else pending.push(b)
+    }
+    flush()
+    const want = new Set(nodes)
+    for (const c of [...el.childNodes]) if (!want.has(c)) c.remove()
+    nodes.forEach((n, i) => {
+      if (el.childNodes[i] != n) el.insertBefore(n, el.childNodes[i] || null)
+    })
+  }
 
-    for (const block of newDoc.blocks) {
-      if (survivingAtomIds.has(block.id)) {
-        flushPending()
-        const atomEl = atomEls.get(block.id)!
-        const expectedNext: ChildNode | null = cursorAfter
-          ? cursorAfter.nextSibling
-          : this._el.firstChild
-        if (atomEl !== expectedNext) {
-          this._el.insertBefore(atomEl, expectedNext)
+  function set(d: Doc, s: Selection | null, mode: number) {
+    if (mode == COMMAND && timer) record() // typing before a command undoes separately
+    const prev = new Map(doc.map((b) => [b.id, b]))
+    // Keep identity for unchanged blocks: cheap equality checks downstream.
+    d = normalize(d, schema).map((b) => {
+      const o = prev.get(b.id)
+      return o && eq(o, b) ? o : b
+    })
+    if (mode != INPUT) render(d)
+    shown = new Map(d.map((b) => [b.id, b]))
+    doc = d
+    sel = s
+    if (mode != INPUT && s) applySelection(el, s)
+    if (mode == LOAD) at = -1
+    if (mode == INPUT) {
+      clearTimeout(timer)
+      timer = setTimeout(record, 300)
+    } else if (mode != HISTORY) record()
+    const empty = api.isEmpty()
+    el.toggleAttribute('data-empty', empty)
+    const h = empty ? '' : serialize(doc, schema)
+    if (h != html) {
+      html = h
+      opts.onChange?.(h)
+    }
+    notify()
+  }
+
+  function apply(fn: Transform) {
+    const s = current()
+    if (!s) return
+    const r = fn(doc, s)
+    if (r) set(r[0], r[1] || s, COMMAND)
+  }
+
+  const cut = (d: Doc, s: Selection): [Doc, Selection] => {
+    const [a, h, i, j] = range(d, s)
+    const b = {
+      ...d[i],
+      children: [...slice(d[i].children, 0, a.offset), ...slice(d[j].children, h.offset)],
+    }
+    return [[...d.slice(0, i), b, ...d.slice(j + 1)], caret(a.block, a.offset)]
+  }
+
+  const split: Transform = (d, s) => {
+    ;[d, s] = cut(d, s)
+    const { block: id, offset } = s.anchor
+    const i = indexOf(d, id)
+    const b = d[i]
+    const { continues } = spec(b)
+    const len = textLength(b.children)
+    if (continues && !len) {
+      return [[...d.slice(0, i), { ...b, type: 'paragraph', attrs: {} }, ...d.slice(i + 1)]]
+    }
+    // The new block continues the type (lists) or falls back to a paragraph.
+    const fresh = (c: TextNode[]) =>
+      continues ? createBlock(b.type, c, b.attrs) : createBlock('paragraph', c)
+    if (!offset && len) return [[...d.slice(0, i), fresh([]), ...d.slice(i)]]
+    const right = fresh(slice(b.children, offset))
+    const left = { ...b, children: slice(b.children, 0, offset) }
+    return [[...d.slice(0, i), left, right, ...d.slice(i + 1)], caret(right.id)]
+  }
+
+  const insert =
+    (ins: Doc): Transform =>
+    (d, s) => {
+      if (!ins.length) return
+      ;[d, s] = cut(d, s)
+      // Pad atoms at the edges so the merge below lands in a text block.
+      if (atom(ins[0])) ins = [createBlock(), ...ins]
+      if (atom(ins[ins.length - 1])) ins = [...ins, createBlock()]
+      const i = indexOf(d, s.anchor.block)
+      const b = d[i]
+      const before = slice(b.children, 0, s.anchor.offset)
+      const after = slice(b.children, s.anchor.offset)
+      const last = ins.length - 1
+      const out = ins.map((x, k) => ({
+        ...x,
+        children: [...(k ? [] : before), ...x.children, ...(k == last ? after : [])],
+      }))
+      // The first block merges into the target; an empty target adopts its type.
+      out[0] = b.children.length
+        ? { ...out[0], id: b.id, type: b.type, attrs: b.attrs }
+        : { ...out[0], id: b.id }
+      const end = out[last]
+      return [
+        [...d.slice(0, i), ...out, ...d.slice(i + 1)],
+        caret(end.id, textLength(end.children) - textLength(after)),
+      ]
+    }
+
+  // Backspace/Delete next to (or inside) an atom removes the atom.
+  const deleteAtom =
+    (forward: boolean): KeyHandler =>
+    () => {
+      let hit = false
+      apply((d, s) => {
+        if (!isCollapsed(s)) return
+        const i = indexOf(d, s.anchor.block)
+        const o = s.anchor.offset
+        const t = atom(d[i])
+          ? i
+          : !forward && !o && atom(d[i - 1])
+            ? i - 1
+            : forward && o >= textLength(d[i].children) && atom(d[i + 1])
+              ? i + 1
+              : -1
+        if (t < 0) return
+        hit = true
+        const rest = d.filter((_, k) => k != t)
+        if (!rest.length) rest.push(createBlock())
+        return [rest, t == i ? caret((rest[t] || rest[t - 1]).id) : s]
+      })
+      return hit
+    }
+
+  const noop = () => {}
+  const keys: [string, KeyHandler][] = [
+    ['enter', () => apply(split)],
+    ['shift+enter', () => (api.commit(), false)], // the browser inserts the <br>
+    ['mod+z', () => api.undo()],
+    ['mod+shift+z', () => api.redo()],
+    ['mod+y', () => api.redo()],
+    ['backspace', deleteAtom(false)],
+    ['delete', deleteAtom(true)],
+    // Block the browser's native formatting, which would desync the model.
+    ['mod+b', noop],
+    ['mod+i', noop],
+    ['mod+u', noop],
+  ]
+
+  const api: Editor = {
+    el,
+    schema,
+    plugins,
+    get doc() {
+      return doc
+    },
+    get selection() {
+      return sel
+    },
+    get editable() {
+      return el.contentEditable == 'true'
+    },
+    set editable(v) {
+      el.contentEditable = String(v)
+      notify()
+    },
+    apply,
+    toggleMark: (type, attrs = {}) =>
+      apply((d, s) =>
+        isCollapsed(s)
+          ? undefined
+          : [
+              markRange(
+                d,
+                s,
+                type,
+                type in marksAt(d, s) ? null : attrs,
+                schema.marks[type]?.excludes,
+              ),
+            ],
+      ),
+    setBlock: (type, attrs = {}) =>
+      apply((d, s) => {
+        const [, , i, j] = range(d, s)
+        return [
+          d.map((b, k) =>
+            k < i || k > j || atom(b)
+              ? b
+              : b.type == type && eq(b.attrs, attrs)
+                ? { ...b, type: 'paragraph', attrs: {} }
+                : { ...b, type, attrs },
+          ),
+        ]
+      }),
+    insertBlock(type, attrs = {}) {
+      if (!schema.blocks[type]) throw Error(`eddy: unknown block type "${type}"`)
+      apply((d, s) => {
+        const i = indexOf(d, s.anchor.block)
+        const b = d[i]
+        const nb = createBlock(type, [], attrs)
+        const replace = b.type == 'paragraph' && !b.children.length
+        d = [...d.slice(0, replace ? i : i + 1), nb, ...d.slice(i + 1)]
+        let land = nb
+        if (atom(nb)) {
+          const k = d.indexOf(nb) + 1
+          if (!d[k] || atom(d[k])) d.splice(k, 0, createBlock())
+          land = d[k]
         }
-        cursorAfter = atomEl
-      } else {
-        pending.push(block)
-      }
+        return [d, caret(land.id)]
+      })
+    },
+    insertHTML: (h) =>
+      apply(
+        insert(
+          // Drop whitespace-only blocks (Office's <p>&nbsp;</p> spacers); keep empty lines.
+          parse(h, schema).filter(
+            (b) => !/^[^\S\n]+$/.test(b.children.map((t) => t.text).join('')),
+          ),
+        ),
+      ),
+    insertText: (text) =>
+      apply(
+        insert(
+          text
+            .split(/\r?\n/)
+            .map((l) => createBlock('paragraph', l ? [{ text: l, marks: {} }] : [])),
+        ),
+      ),
+    getMarks() {
+      const s = current()
+      return s ? marksAt(doc, s) : {}
+    },
+    getBlock() {
+      const s = current()
+      return s ? doc[indexOf(doc, s.anchor.block)] : null
+    },
+    getHTML: () => html,
+    setHTML: (h) => set(parse(h, schema), null, LOAD),
+    isEmpty: () => doc.length == 1 && doc[0].type == 'paragraph' && !doc[0].children.length,
+    undo() {
+      if (timer) record()
+      if (at > 0) set(...hist[--at], HISTORY)
+    },
+    redo() {
+      if (at < hist.length - 1) set(...hist[++at], HISTORY)
+    },
+    commit() {
+      if (timer) record()
+    },
+    subscribe(f) {
+      subs.add(f)
+      return () => subs.delete(f)
+    },
+    destroy() {
+      ac.abort()
+      clearTimeout(timer)
+      cleanups.splice(0).forEach((f) => f())
+      subs.clear()
+    },
+  }
+
+  // Plugins first: their DOM listeners run before ours and may preventDefault.
+  for (const p of plugins) {
+    for (const [k, f] of Object.entries(p.keys || {})) keys.push([k.toLowerCase(), f])
+    const c = p.setup?.(api)
+    if (c) cleanups.push(c)
+  }
+
+  const sync = () => composing || set(parse(el, schema, shown), readSelection(el), INPUT)
+  on(el, 'input', sync)
+  on(el, 'compositionstart', () => (composing = true))
+  on(el, 'compositionend', () => {
+    composing = false
+    sync()
+  })
+  on(el, 'keydown', (e: KeyboardEvent) => {
+    if (e.defaultPrevented || e.isComposing) return
+    for (let k = keys.length; k--; ) {
+      if (matches(e, keys[k][0]) && keys[k][1](api, e) !== false) return e.preventDefault()
     }
-    flushPending()
-  }
-
-  private _scheduleHistoryPush(): void {
-    if (this._historyDebounce !== null) clearTimeout(this._historyDebounce)
-    this._historyDebounce = setTimeout(() => {
-      this._history = history.push(this._history, this._doc, this._selection)
-      this._historyDebounce = null
-    }, 300)
-  }
-
-  private _flushHistoryDebounce(): void {
-    if (this._historyDebounce === null) return
-    clearTimeout(this._historyDebounce)
-    this._historyDebounce = null
-    this._history = history.push(this._history, this._doc, this._selection)
-  }
-}
-
-/**
- * Surgical DOM updates are only safe when block IDs, types, and grouping-
- * relevant attrs (list ordered/indent, heading level) match in order —
- * anything else changes the HTML element tree and needs a full render.
- */
-function canSurgicallyUpdate(oldDoc: DocumentNode, newDoc: DocumentNode): boolean {
-  if (oldDoc.blocks.length !== newDoc.blocks.length) return false
-  for (let i = 0; i < oldDoc.blocks.length; i++) {
-    const a = oldDoc.blocks[i]
-    const b = newDoc.blocks[i]
-    if (a.id !== b.id || a.type !== b.type) return false
-    const aAttrs = a.attrs
-    const bAttrs = b.attrs
-    if (a.type === 'heading' && aAttrs.level !== bAttrs.level) return false
-    if (
-      a.type === 'listItem' &&
-      (aAttrs.ordered !== bAttrs.ordered || aAttrs.indent !== bAttrs.indent)
-    ) {
-      return false
+  })
+  on(el, 'paste', (e: ClipboardEvent) => {
+    if (e.defaultPrevented) return
+    e.preventDefault()
+    const h = e.clipboardData?.getData('text/html')
+    if (h) api.insertHTML(h)
+    else api.insertText(e.clipboardData?.getData('text/plain') || '')
+  })
+  on(document, 'selectionchange', () => {
+    const s = readSelection(el)
+    if (s && !eq(s, sel)) {
+      sel = s
+      notify()
     }
-  }
-  return true
-}
+  })
 
-function selectionsEqual(a: ASTSelection, b: ASTSelection): boolean {
-  return positionsEqual(a.anchor, b.anchor) && positionsEqual(a.head, b.head)
-}
-
-function isEmptyParagraph(block: BlockNode): boolean {
-  if (block.type !== 'paragraph') return false
-  if (block.children.length !== 1) return false
-  const c = block.children[0]
-  return c.type === 'text' && c.text === ''
-}
-
-function replaceAtomElement(blockEl: Element, block: BlockNode, schema: Schema): void {
-  const tmp = document.createElement('template')
-  tmp.innerHTML = serializeSingleBlock(block, true, schema)
-  const fresh = tmp.content.firstElementChild
-  if (fresh) blockEl.replaceWith(fresh)
-}
-
-function buildSchema(plugins: EddyPlugin[]): Schema {
-  const marks: MarkSpec[] = []
-  const blocks: BlockSpec[] = []
-  for (const plugin of plugins) {
-    if (plugin.marks) marks.push(...plugin.marks)
-    if (plugin.blocks) blocks.push(...plugin.blocks)
-  }
-  return new SchemaCls(marks, blocks)
+  el.contentEditable = 'true'
+  api.setHTML(opts.content || '')
+  return api
 }

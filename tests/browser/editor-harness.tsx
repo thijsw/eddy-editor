@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { EddyEditor } from '../../src/react/index'
-import { defaultPlugins } from '../../src/plugins/index'
+import { EddyEditor } from '../../src/react'
+import { defaultPlugins } from '../../src/index'
 
 export interface HarnessProps {
   initial: string

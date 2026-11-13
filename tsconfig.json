@@ -15,8 +15,8 @@
     "jsx": "react-jsx",
     "paths": {
       "eddy-editor": ["./src/index.ts"],
-      "eddy-editor/vue": ["./src/vue/index.ts"],
-      "eddy-editor/react": ["./src/react/index.ts"]
+      "eddy-editor/vue": ["./src/vue.ts"],
+      "eddy-editor/react": ["./src/react.tsx"]
     }
   },
   "include": [

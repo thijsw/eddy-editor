@@ -8,7 +8,7 @@ export default defineConfig({
     vue(),
     react(),
     dts({
-      include: ['src/**/*.ts', 'src/**/*.tsx', 'src/**/*.vue'],
+      include: ['src/**/*.ts', 'src/**/*.tsx'],
       outDir: 'dist',
       insertTypesEntry: true,
     }),
@@ -17,13 +17,13 @@ export default defineConfig({
     lib: {
       entry: {
         index: 'src/index.ts',
-        vue: 'src/vue/index.ts',
-        react: 'src/react/index.ts',
+        vue: 'src/vue.ts',
+        react: 'src/react.tsx',
       },
       formats: ['es'],
     },
     rolldownOptions: {
-      external: ['vue', 'react', 'react-dom', 'react/jsx-runtime', '@lucide/vue', 'lucide-react'],
+      external: ['vue', 'react', 'react/jsx-runtime'],
     },
     sourcemap: true,
     emptyOutDir: true,
