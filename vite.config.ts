@@ -19,11 +19,12 @@ export default defineConfig({
         index: 'src/index.ts',
         vue: 'src/vue.ts',
         react: 'src/react.tsx',
+        nuxt: 'src/nuxt.ts',
       },
       formats: ['es'],
     },
     rolldownOptions: {
-      external: ['vue', 'react', 'react/jsx-runtime'],
+      external: ['vue', 'react', 'react/jsx-runtime', '@nuxt/kit'],
     },
     sourcemap: true,
     emptyOutDir: true,

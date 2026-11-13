@@ -16,7 +16,8 @@
     "paths": {
       "eddy-editor": ["./src/index.ts"],
       "eddy-editor/vue": ["./src/vue.ts"],
-      "eddy-editor/react": ["./src/react.tsx"]
+      "eddy-editor/react": ["./src/react.tsx"],
+      "eddy-editor/nuxt": ["./src/nuxt.ts"]
     }
   },
   "include": [

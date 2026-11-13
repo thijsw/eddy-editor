@@ -8,6 +8,27 @@ npm install eddy-editor
 
 `vue` is the only peer dependency.
 
+## Nuxt
+
+Register the module and Nuxt takes care of the rest:
+
+```ts
+// nuxt.config.ts
+export default defineNuxtConfig({
+  modules: ['eddy-editor/nuxt'],
+})
+```
+
+The module needs `@nuxt/kit`, which every Nuxt project already has.
+
+**Why a module is needed.** Nitro keeps dependencies external on the server and resolves their `vue` import to its own copy of the Vue runtime, next to the copy Nuxt bundles into the app. A component whose render function runs against that second copy sees none of the app's rendering state, so server-side rendering throws (`Cannot read properties of null (reading 'ce')` from `renderSlot`) — and because the render block it opened is never closed in that copy, every page the process renders afterwards is kept in memory. The module adds `eddy-editor` to `build.transpile`, which bundles it with the app so it shares its Vue instance. Without the module, add that yourself:
+
+```ts
+export default defineNuxtConfig({
+  build: { transpile: ['eddy-editor'] },
+})
+```
+
 ## Basic usage
 
 ```vue

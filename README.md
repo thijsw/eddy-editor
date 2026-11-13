@@ -30,7 +30,7 @@ const editor = createEditor(document.querySelector('#editor')!, {
 mountToolbar(document.querySelector('#toolbar')!, editor)
 ```
 
-Vue and React: see [docs/vue.md](docs/vue.md) and [docs/react.md](docs/react.md).
+Vue and React: see [docs/vue.md](docs/vue.md) and [docs/react.md](docs/react.md). Nuxt 3/4: add `modules: ['eddy-editor/nuxt']` ([details](docs/vue.md#nuxt)).
 
 ```vue
 <eddy-editor v-model="html" :plugins="defaultPlugins" />
