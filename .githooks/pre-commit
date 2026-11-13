@@ -3,6 +3,6 @@
 
 # Only run if source files are staged (skip docs-only commits)
 if git diff --cached --name-only | grep -qE '^src/'; then
-  ./scripts/update-bundle-size.sh
+  pnpm build >/dev/null 2>&1 && node scripts/bundle-size.mjs >/dev/null
   git add README.md
 fi

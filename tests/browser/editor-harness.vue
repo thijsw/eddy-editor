@@ -10,8 +10,8 @@
 
 <script setup lang="ts">
 import { ref, watch } from 'vue'
-import { EddyEditor } from '../../src/vue/index'
-import { defaultPlugins } from '../../src/plugins/index'
+import { EddyEditor } from '../../src/vue'
+import { defaultPlugins } from '../../src/index'
 
 const props = defineProps<{
   initial: string

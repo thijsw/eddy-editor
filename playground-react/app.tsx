@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { EddyEditor, defaultPlugins } from 'eddy-editor/react'
+import { EddyEditor } from 'eddy-editor/react'
+import { defaultPlugins } from 'eddy-editor'
 import { HtmlPanel } from './html-panel'
 import { AstPanel } from './ast-panel'
 

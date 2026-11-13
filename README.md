@@ -1,220 +1,256 @@
 # Eddy Editor
 
-A lightweight WYSIWYG text editor for Vue 3 and React. AST-based, zero runtime dependencies, fully typed, and genuinely extensible through a plugin system where plugins own their features end-to-end.
+A tiny, extensible WYSIWYG editor. Framework-agnostic core with thin Vue 3 and React wrappers, a plain-data document model, and plugins that own their features end-to-end.
 
 [Live demo](https://thijsw.github.io/eddy-editor/)
 
-## Features
+<!-- BUNDLE_SIZE -->core **4.8 kB** · with all plugins + toolbar **6.7 kB** · Vue **7.1 kB** · React **7.0 kB** (min + gzip)<!-- /BUNDLE_SIZE -->
 
-- **Works with Vue and React** — framework-agnostic core, thin per-framework wrappers. Pick your import and go.
-- **AST document model** — content is a typed tree, not raw HTML. Pure functional commands transform it; a schema rule pass normalises after every mutation.
-- **Plugin-driven schema** — bold, italic, headings, lists, links, paragraphs — every node and mark type comes from a plugin contributing a `MarkSpec` or `BlockSpec`. Add a new block or mark in one plugin file, no core edits.
-- **Zero runtime dependencies** — your UI framework is the only peer dependency. <!-- BUNDLE_SIZE -->Vue **47.74 kB** min / **14.03 kB** gzip · React **46.91 kB** min / **13.69 kB** gzip<!-- /BUNDLE_SIZE -->.
-- **Two-way binding** — `v-model` in Vue, `value` + `onChange` in React.
-- **Plugin lifecycle** — declarative schema + commands + keybindings + toolbar, plus an imperative `setup(ctx)` hook for event subscriptions, custom behaviour, or plugins that need to own their state.
-- **Event bus** — subscribe to `change`, `selectionchange`, `keydown`, `paste`, `destroy` on any `EditorAPI`.
-- **Transactions** — `editor.tr.apply(fn)` runs a pure `(doc, sel) => {doc, sel}` command with history, schema, and render wired up.
-- **Safe paste** — content from Word/Google Docs runs through an allowlist sanitizer.
-- **Undo/Redo** — built-in history stack with Mod+Z / Mod+Shift+Z.
-- **SSR-safe** — no browser API access at module evaluation time.
-- **Themeable** — all visual properties exposed as CSS custom properties.
+- **Zero dependencies.** Vue or React is the only peer, and only if you use its wrapper. Icons are inline SVG.
+- **Plain-data documents.** A document is an array of blocks; a block holds text runs with marks. Commands are pure functions over that data.
+- **Plugins own everything.** Bold, links, headings, and lists are plugins contributing parse/render rules, keybindings, and toolbar items. Yours work the same way.
+- **Safe by construction.** HTML is parsed inertly against the schema: unknown tags are unwrapped, attributes dropped, `<script>`/`<style>` removed, and link hrefs sanitised.
+- **Embeds that don't reload.** Atom blocks (iframes, videos) keep their live DOM element across edits.
 
-## Framework guides
+## Quick start
 
-- **Vue 3** — [docs/vue.md](docs/vue.md)
-- **React 18 / 19** — [docs/react.md](docs/react.md)
-- **Nuxt 3 / 4** — [docs/vue.md#nuxt](docs/vue.md#nuxt)
+```bash
+npm install eddy-editor
+```
+
+```ts
+import { createEditor, mountToolbar, defaultPlugins } from 'eddy-editor'
+import 'eddy-editor/style.css'
+
+const editor = createEditor(document.querySelector('#editor')!, {
+  plugins: defaultPlugins,
+  content: '<p>Hello <strong>world</strong></p>',
+  onChange: (html) => console.log(html),
+})
+mountToolbar(document.querySelector('#toolbar')!, editor)
+```
+
+Vue and React: see [docs/vue.md](docs/vue.md) and [docs/react.md](docs/react.md). Nuxt 3/4: add `modules: ['eddy-editor/nuxt']` ([details](docs/vue.md#nuxt)).
+
+```vue
+<eddy-editor v-model="html" :plugins="defaultPlugins" />
+```
+
+```tsx
+<EddyEditor value={html} onChange={setHtml} plugins={defaultPlugins} />
+```
+
+Plugins and types always come from `eddy-editor`; only the components come from `eddy-editor/vue` or `eddy-editor/react`.
 
 ## Keyboard shortcuts
 
-| Shortcut    | Action                                    |
-| ----------- | ----------------------------------------- |
-| Mod+B       | Bold                                      |
-| Mod+I       | Italic                                    |
-| Mod+U       | Underline                                 |
-| Mod+E       | Inline code                               |
-| Mod+K       | Add / edit / remove link                  |
-| Mod+Z       | Undo                                      |
-| Mod+Shift+Z | Redo                                      |
-| Enter       | New paragraph (exits headings into `<p>`) |
-| Shift+Enter | Line break (`<br>`)                       |
+| Shortcut                   | Action                                         |
+| -------------------------- | ---------------------------------------------- |
+| Mod+B / Mod+I / Mod+U      | Bold / italic / underline                      |
+| Mod+E                      | Inline code                                    |
+| Mod+K                      | Add, edit or remove a link                     |
+| Mod+Z / Mod+Shift+Z, Mod+Y | Undo / redo                                    |
+| Enter                      | New block (continues lists; exits empty items) |
+| Shift+Enter                | Line break                                     |
 
-"Mod" means Cmd on macOS, Ctrl on Windows/Linux.
+"Mod" is Cmd or Ctrl.
 
-## Plugin system
-
-Every feature in Eddy is a plugin, including the built-ins. A plugin can contribute any of:
-
-- **Marks** (`marks: MarkSpec[]`) — inline formatting types with their HTML parse and serialise rules.
-- **Blocks** (`blocks: BlockSpec[]`) — block node types (paragraphs, headings, list items, blockquotes, …) with optional grouping rules for list-like wrappers.
-- **Commands** (`commands: Record<string, CommandFn>`) — named operations dispatched via `editor.run(name, ...args)`.
-- **Keybindings** (`keybindings: Record<string, string>`) — keybinding string → command name; the built-in dispatcher calls `preventDefault` on matches.
-- **Toolbar items** (`toolbar: ToolbarItem[]`) — buttons rendered by the default `<EddyToolbar>`. Each item references a command; optional `args` are spread into `editor.run`.
-- **Schema rules** (`schemaRules: SchemaRule[]`) — normalisation passes run after every mutation, in addition to the built-in rules.
-- **Setup hook** (`setup(ctx): () => void`) — runs once on editor construction. Returns an optional cleanup called on destroy. Use it for event listeners, dynamic command registration, or custom behaviour.
-
-### Minimal example — a highlight mark
+## Document model
 
 ```ts
-import type { EddyPlugin } from 'eddy-editor'
+type Doc = Block[]
+interface Block {
+  id: string
+  type: string
+  attrs: Attrs
+  children: TextNode[]
+}
+interface TextNode {
+  text: string
+  marks: Record<string, Attrs>
+} // '\n' is a line break
+interface Pos {
+  block: string
+  offset: number
+} // character offset within the block
+interface Selection {
+  anchor: Pos
+  head: Pos
+}
+```
 
-export const highlight: EddyPlugin = {
-  name: 'highlight',
-  marks: [
-    {
-      type: 'highlight',
-      parseDOM: [{ tag: 'mark' }],
-      toDOM: () => ['mark'],
-      excludes: ['code'], // optional: can't coexist with inline code
-    },
-  ],
-  commands: {
-    'highlight.toggle': (api) => api.toggleMark('highlight'),
+Lists are flat: each `listItem` block carries `{ ordered, indent }` and consecutive items are grouped into `<ul>`/`<ol>` when serialised.
+
+## Plugins
+
+A plugin is a plain object. Every field is optional.
+
+```ts
+interface Plugin {
+  marks?: Record<string, MarkSpec>
+  blocks?: Record<string, BlockSpec>
+  keys?: Record<string, KeyHandler> // 'mod+shift+h' → (editor, event) => boolean | void
+  toolbar?: ToolbarItem[]
+  normalize?(doc: Doc): Doc // runs after every change
+  setup?(editor: Editor): (() => void) | void // return a cleanup
+}
+```
+
+Later plugins override earlier ones: a spec with the same type replaces the earlier spec but keeps its position (which fixes mark nesting order), and a later key handler runs first. A key handler that returns `false` passes the key on to earlier handlers, then to the browser.
+
+### A mark: highlight
+
+```ts
+import type { Plugin } from 'eddy-editor'
+
+export const highlight: Plugin = {
+  marks: {
+    highlight: { match: 'mark', render: 'mark', excludes: ['code'] },
   },
-  keybindings: { 'mod+shift+h': 'highlight.toggle' },
+  keys: { 'mod+shift+h': (ed) => ed.toggleMark('highlight') },
   toolbar: [
     {
-      command: 'highlight.toggle',
-      label: 'H',
       title: 'Highlight',
-      isActive: (api) => api.isMarkActive('highlight'),
+      label: 'H',
+      run: (ed) => ed.toggleMark('highlight'),
+      active: (ed) => 'highlight' in ed.getMarks(),
     },
   ],
 }
 ```
 
-Drop `highlight` into the `plugins` prop and it parses `<mark>`, serialises `<mark>`, toggles on Mod+Shift+H, shows an active-state toolbar button, and strips inline-code marks from the range when applied.
-
-### Example — a blockquote block
+### A block: blockquote
 
 ```ts
-import type { EddyPlugin } from 'eddy-editor'
-
-export const blockquote: EddyPlugin = {
-  name: 'blockquote',
-  blocks: [
-    {
-      type: 'blockquote',
-      parseDOM: [{ tag: 'blockquote' }],
-      toDOM: () => ['blockquote'],
-    },
-  ],
-  commands: {
-    'blockquote.toggle': (api) => api.setBlockType('blockquote'),
-  },
+export const blockquote: Plugin = {
+  blocks: { blockquote: { match: 'blockquote', render: 'blockquote' } },
   toolbar: [
     {
-      command: 'blockquote.toggle',
+      title: 'Quote',
       label: '❝',
-      title: 'Blockquote',
-      isActive: (api) => api.getBlockAt()?.type === 'blockquote',
+      run: (ed) => ed.setBlock('blockquote'), // calling it again reverts to a paragraph
+      active: (ed) => ed.getBlock()?.type === 'blockquote',
     },
   ],
 }
 ```
 
-`api.setBlockType('blockquote')` does per-block toggle semantics — calling it a second time reverts to paragraph.
-
-### Composing plugins
-
-The `plugins` prop on `<EddyEditor>` is the **complete** list — no auto-merging with `defaultPlugins`. Either import `defaultPlugins` wholesale or hand-pick exactly what you need; unused plugins are tree-shaken out of your bundle.
+### Specs
 
 ```ts
-// all built-ins (with Lucide icons baked in), plus a custom plugin
-import { defaultPlugins } from 'eddy-editor/vue' // or '/react'
-const plugins = [...defaultPlugins, highlight]
-// or a hand-picked subset — unused plugins and their icons tree-shake out
-import { core, bold, italic, heading } from 'eddy-editor/vue'
-const minimal = [core, bold, italic, heading]
+interface MarkSpec {
+  match: string // CSS selector: 'strong,b', 'span.highlight', 'a[href]'
+  attrs?(el: Element): Attrs | false | void // false rejects the match
+  render: DOMSpec | ((attrs: Attrs) => DOMSpec)
+  excludes?: string[] // marks removed when this one is applied
+}
+
+interface BlockSpec {
+  match: string
+  attrs?(el: Element, root: Node): Attrs | false | void
+  render: DOMSpec | ((block: Block) => DOMSpec)
+  atom?: boolean // leaf block rendered entirely by `render` (embeds, dividers)
+  continues?: boolean // Enter continues this type; Enter on an empty one exits
+  group?(block: Block): [tag: string, depth: number] // wrap runs, e.g. ['ul', 0]
+}
+
+// 'p' | ['a', { href }] | ['pre', ['code', 0]]  (0 marks where content goes)
+type DOMSpec = string | [tag, attrs?, ...children]
 ```
 
-Within the schema, `MarkSpec`/`BlockSpec` dedup by `type` on a last-wins basis (first position is preserved for canonical ordering). Commands and keybindings also last-win. So replacing a built-in is just a matter of placing your override later in the array.
+Block selectors are tried from the last plugin to the first, so a specific `div.callout` wins over the built-in paragraph's `p,div`.
 
-### Built-in plugins
+### An atom block: embed
 
-| Plugin        | Export          | Schema contribution                             | Commands                                         | Keybinding         |
-| ------------- | --------------- | ----------------------------------------------- | ------------------------------------------------ | ------------------ |
-| Core          | `core`          | —                                               | `core.insertParagraph`, `core.undo`, `core.redo` | Mod+Z, Mod+Shift+Z |
-| Safe paste    | `safePaste`     | —                                               | —                                                |                    |
-| Bold          | `bold`          | mark `bold` (`<strong>`, `<b>`)                 | `bold.toggle`                                    | Mod+B              |
-| Italic        | `italic`        | mark `italic` (`<em>`, `<i>`)                   | `italic.toggle`                                  | Mod+I              |
-| Underline     | `underline`     | mark `underline` (`<u>`)                        | `underline.toggle`                               | Mod+U              |
-| Strikethrough | `strikethrough` | mark `strikethrough` (`<s>`,`<strike>`,`<del>`) | `strikethrough.toggle`                           |                    |
-| Code          | `code`          | mark `code` (`<code>`)                          | `code.toggle`                                    | Mod+E              |
-| Link          | `link`          | mark `link` (`<a href>` — sanitised)            | `link.set(href)`, `link.remove`, `link.prompt`   | Mod+K              |
-| Heading       | `heading`       | block `heading` (`<h1>`–`<h6>`)                 | `heading.set(level)`                             |                    |
-| List          | `list`          | block `listItem` grouped as `<ul>`/`<ol>`       | `list.toggleUnordered`, `list.toggleOrdered`     |                    |
-
-The `link` plugin is the reference for a non-trivial plugin — it owns URL sanitisation (`sanitizeHref` lives in `src/plugins/links.ts`, not the core), a `link.prompt` UX command, and range-expanding semantics for collapsed cursors inside an existing link.
-
-`paragraph` is a Schema invariant — it's always present regardless of whether `core` is installed, so even the most stripped-down plugin set can still parse and serialise.
-
-`safePaste` is opt-in — it pre-processes pasted HTML from Word, Google Docs, and other noisy sources (stripping `<p>&nbsp;</p>` spacers, MS conditional comments, `<o:p>` namespaced tags). The schema parser still sanitises attributes when it's omitted, so dropping it only affects how tidy Office pastes look — roughly 1.3 kB min / 0.5 kB gzip savings. The framework-decorated `defaultPlugins` includes it.
-
-### Import paths and icons
-
-The per-framework entry points (`eddy-editor/vue`, `eddy-editor/react`) ship **decorated** versions of the plugin exports whose toolbar items carry Lucide icons (`@lucide/vue` or `lucide-react` respectively). Import plugins from the framework subpath to get icons in the default toolbar:
+Atom blocks have no editable text. Their element is reused across edits, so an iframe never reloads.
 
 ```ts
-import { EddyEditor, defaultPlugins, bold, italic } from 'eddy-editor/vue'
-//                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ — plugins with icons
+import { sanitizeHref, type Plugin } from 'eddy-editor'
+
+export const video: Plugin = {
+  blocks: {
+    video: {
+      match: 'iframe[data-video]',
+      atom: true,
+      attrs: (el) => {
+        const src = sanitizeHref(el.getAttribute('src'))
+        return src ? { src } : false
+      },
+      render: (b) => ['iframe', { src: b.attrs.src, 'data-video': '', contenteditable: 'false' }],
+    },
+  },
+}
+
+editor.insertBlock('video', { src: 'https://www.youtube.com/embed/…' })
 ```
 
-Import from the root `eddy-editor` for the undecorated plugins (no icons — toolbar buttons show the letter labels). Unused plugins (and their icons) tree-shake out of the consumer bundle either way.
+Backspace at the start of the following block, or Delete at the end of the preceding one, removes the atom.
 
-## `EditorAPI`
+### Transforms
 
-The `api` passed to commands, toolbar `isActive`, and available as `ctx.editor` in `setup`. Identical in both frameworks.
-
-### Properties
-
-| Property    | Type                   | Description                                   |
-| ----------- | ---------------------- | --------------------------------------------- |
-| `el`        | `HTMLElement`          | The underlying `contenteditable` element      |
-| `doc`       | `DocumentNode`         | The current AST document tree                 |
-| `selection` | `ASTSelection \| null` | The current cursor/selection as AST positions |
-| `schema`    | `Schema`               | The schema built from the editor's plugins    |
-| `tr`        | `TransactionAPI`       | Low-level transaction entry point             |
-
-### Mutation primitives
-
-| Method                       | Description                                                              |
-| ---------------------------- | ------------------------------------------------------------------------ |
-| `toggleMark(type, attrs?)`   | Toggle a mark. Uses `MarkSpec.excludes` to strip conflicting marks.      |
-| `setBlockType(type, attrs?)` | Set block type with per-block toggle semantics (list items are skipped). |
-| `insertHTML(html)`           | Parse HTML with the editor's schema, then insert at the cursor.          |
-
-For lower-level operations — inserting a `DocumentNode` directly, deleting the current selection, or any custom AST transform — use `api.tr.apply(fn)` (see Transactions below).
-
-### Inspection
-
-| Method               | Returns             | Description                                           |
-| -------------------- | ------------------- | ----------------------------------------------------- |
-| `isMarkActive(type)` | `boolean`           | Whether the mark is active at the cursor or selection |
-| `getMarkAt(type)`    | `Mark \| null`      | Mark of that type at the cursor (with attrs, if any)  |
-| `getBlockAt()`       | `BlockNode \| null` | Block at the cursor (type, attrs, children)           |
-
-### Command dispatch & events
-
-| Method               | Description                                                    |
-| -------------------- | -------------------------------------------------------------- |
-| `run(name, ...args)` | Dispatch a registered command. Warns on unknown names.         |
-| `on(event, handler)` | Subscribe to an editor event. Returns an unsubscribe function. |
-| `undo()` / `redo()`  | Walk the history stack.                                        |
-| `pushHistory()`      | Flush debounced typing state (use before native browser ops).  |
-
-Events: `change` (canonical HTML), `selectionchange` (AST selection), `keydown`, `paste`, `destroy`.
-
-### Transactions
+For anything beyond the built-in commands, `editor.apply` runs a pure transform. History, normalisation, rendering and change events are handled for you.
 
 ```ts
-api.tr.apply((doc, sel) => {
-  // return { doc, selection } — history, schema, and render are automatic
-  return someCommand(doc, sel)
+import { markRange, range } from 'eddy-editor'
+
+// Uppercase the selected blocks
+editor.apply((doc, sel) => {
+  const [, , from, to] = range(doc, sel)
+  return [
+    doc.map((b, i) =>
+      i < from || i > to
+        ? b
+        : { ...b, children: b.children.map((t) => ({ ...t, text: t.text.toUpperCase() })) },
+    ),
+  ]
 })
 ```
 
-Use when a plugin needs logic that doesn't fit `toggleMark` / `setBlockType` — e.g. the built-in `link` plugin expands a collapsed cursor inside a link to the full link range before applying. Every existing command is built on top of this.
+Return `[doc]` to keep the selection, `[doc, selection]` to move it, or nothing to cancel. Helpers: `slice`, `markRange`, `marksAt`, `range`, `indexOf`, `caret`, `isCollapsed`, `createBlock`, `textLength`, `eq`.
+
+### Built-in plugins
+
+| Export          | Contributes                                                  | Keys  |
+| --------------- | ------------------------------------------------------------ | ----- |
+| `bold`          | mark `bold` (`<strong>`, `<b>`)                              | Mod+B |
+| `italic`        | mark `italic` (`<em>`, `<i>`)                                | Mod+I |
+| `underline`     | mark `underline` (`<u>`)                                     | Mod+U |
+| `strikethrough` | mark `strikethrough` (`<s>`, `<strike>`, `<del>`)            |       |
+| `code`          | mark `code` (`<code>`)                                       | Mod+E |
+| `link`          | mark `link` (`<a href>`, sanitised); `setLink`, `promptLink` | Mod+K |
+| `heading`       | block `heading` (`<h1>`–`<h6>`) and a block-type select      |       |
+| `list`          | block `listItem` grouped as `<ul>`/`<ol>`; `toggleList`      |       |
+
+`defaultPlugins` is all of them. Enter, Shift+Enter, undo/redo, paste and atom deletion are built into the editor, not plugins; override any of them with a later `keys` entry.
+
+## Editor API
+
+| Member                                  | Description                                                          |
+| --------------------------------------- | -------------------------------------------------------------------- |
+| `el`, `schema`, `plugins`               | The editable element, the compiled schema, the plugin list           |
+| `doc`, `selection`                      | Current document and last known selection                            |
+| `editable`                              | Get/set whether the editor accepts input                             |
+| `apply(transform)`                      | Run a transform (see above)                                          |
+| `toggleMark(type, attrs?)`              | Toggle a mark over the selection                                     |
+| `setBlock(type, attrs?)`                | Set the block type; blocks already of that type become paragraphs    |
+| `insertBlock(type, attrs?)`             | Insert a block after the cursor (replaces an empty paragraph)        |
+| `insertHTML(html)` / `insertText(text)` | Insert parsed HTML or plain text at the cursor                       |
+| `getMarks()` / `getBlock()`             | Marks active at the selection / block at the cursor                  |
+| `getHTML()` / `setHTML(html)`           | Read the canonical HTML (`''` when empty) / replace the content      |
+| `isEmpty()`                             | True for a single empty paragraph                                    |
+| `undo()` / `redo()` / `commit()`        | History; `commit` closes the current typing group                    |
+| `subscribe(fn)`                         | Called after every document or selection change; returns unsubscribe |
+| `destroy()`                             | Remove listeners and run plugin cleanups                             |
+
+## HTML without an editor
+
+```ts
+import { createSchema, parse, serialize, defaultPlugins } from 'eddy-editor'
+
+const schema = createSchema(defaultPlugins)
+const doc = parse('<p>Hello <b>world</b></p>', schema) // needs a DOM (browser, jsdom, happy-dom)
+serialize(doc, schema) // '<p>Hello <strong>world</strong></p>', runs anywhere
+```
 
 ## Styling
 
@@ -222,7 +258,7 @@ Use when a plugin needs logic that doesn't fit `toggleMark` / `setBlockType` —
 import 'eddy-editor/style.css'
 ```
 
-Override via CSS custom properties:
+Override the CSS custom properties, or skip the stylesheet and style `.eddy-wrapper`, `.eddy-toolbar`, `.eddy-toolbar-btn`, `.eddy-toolbar-select` and `.eddy-editor` yourself.
 
 ```css
 :root {
@@ -241,42 +277,30 @@ Override via CSS custom properties:
 }
 ```
 
-Or skip the stylesheet and style `.eddy-wrapper`, `.eddy-toolbar`, `.eddy-toolbar-btn`, `.eddy-toolbar-select`, and `.eddy-editor` yourself.
+## Migrating from 0.x
 
-## AST utilities
-
-```ts
-import { parseHTML, serializeToHTML } from 'eddy-editor'
-import type { DocumentNode } from 'eddy-editor'
-
-const doc: DocumentNode = parseHTML('<p>Hello <strong>world</strong></p>')
-const html: string = serializeToHTML(doc)
-```
-
-Both helpers take an optional `Schema` as the second argument; omitted, they use the schema built from `defaultPlugins`. For custom schemas:
-
-```ts
-import { Schema } from 'eddy-editor'
-const schema = new Schema(
-  [
-    /* marks */
-  ],
-  [
-    /* blocks */
-  ],
-)
-```
-
-## Package layout
-
-```
-eddy-editor            # framework-agnostic core: Editor, plugins, AST, Schema, types
-eddy-editor/vue        # Vue 3 components + useEditorState composable
-eddy-editor/react      # React components + useEditorState hook
-eddy-editor/nuxt       # Nuxt module: bundles the Vue entry with the app (docs/vue.md#nuxt)
-eddy-editor/style.css  # default stylesheet
-```
+| 0.x                                                       | 1.0                                                                     |
+| --------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `new Editor(el, emit, plugins)` + `loadHTML`              | `createEditor(el, { plugins, content, onChange })`                      |
+| `core`, `safePaste` plugins                               | Built in                                                                |
+| `defaultPlugins` from `eddy-editor/vue` / `/react`        | From `eddy-editor`; icons are built in, lucide is no longer needed      |
+| `name`, `commands`, `keybindings`, `editor.run(name)`     | `keys: { 'mod+b': (ed) => … }`; call functions (`toggleList(ed, true)`) |
+| `marks: [{ type, parseDOM, toDOM }]`                      | `marks: { type: { match, attrs, render } }`                             |
+| `ParseRule.getAttrs`, `AttrSpec`                          | `attrs(el)`, returning `false` to reject                                |
+| `BlockGroupSpec`                                          | `group(block) => [tag, depth]`; ancestry via `attrs(el, root)`          |
+| `ToolbarItem { command, args, isActive }`                 | `{ run(ed), active?(ed) }`, or a select `{ options, value, run }`       |
+| `DocumentNode { blocks }`, `hardBreak` nodes              | `Block[]`; `'\n'` inside text                                           |
+| `Mark[]` on text                                          | `marks: { bold: {}, link: { href } }`                                   |
+| `ASTPosition { blockId, inlineIndex, offset }`            | `Pos { block, offset }`, offset counts characters in the block          |
+| `tr.apply(fn)` returning `{ doc, selection }`             | `apply(fn)` returning `[doc, selection?]`                               |
+| `setBlockType`, `isMarkActive`, `getMarkAt`, `getBlockAt` | `setBlock`, `type in getMarks()`, `getMarks()[type]`, `getBlock`        |
+| `on('change' \| 'selectionchange' \| …)`                  | `subscribe(fn)`; `onChange` option; DOM events on `editor.el`           |
+| `pushHistory()`                                           | `commit()`                                                              |
+| `parseHTML(html)`, `serializeToHTML(doc)`                 | `parse(html, schema)`, `serialize(doc, schema)`                         |
+| `useEditorState(api, items)` → `Map`                      | `useEditorState(editor, (ed) => value)`                                 |
+| `.eddy-editor.is-disabled`                                | `.eddy-editor[contenteditable='false']`                                 |
+| Empty editor emits `<p><br></p>`                          | Empty editor emits `''`                                                 |
 
 ## License
 
-MIT
+MIT. Toolbar icons are from [Lucide](https://lucide.dev) (ISC).

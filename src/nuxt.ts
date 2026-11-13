@@ -10,7 +10,7 @@ import type { NuxtOptions } from '@nuxt/schema'
  * `inject` context), so on the server it throws — and the render block it had
  * opened stays open in that copy, pinning every later render in the process.
  */
-export const TRANSPILE_PACKAGES = ['eddy-editor', '@lucide/vue'] as const
+export const TRANSPILE_PACKAGES = ['eddy-editor'] as const
 
 /** Adds the packages to a `build.transpile` list, skipping ones already present. */
 export const addTranspilePackages = (transpile: NuxtOptions['build']['transpile']) => {
@@ -25,7 +25,7 @@ export const addTranspilePackages = (transpile: NuxtOptions['build']['transpile'
 
 /**
  * Nuxt module: `modules: ['eddy-editor/nuxt']`. Its only job is to make Nuxt
- * bundle `eddy-editor` and `@lucide/vue` with the app, which is what
+ * bundle `eddy-editor` with the app, which is what
  * `build.transpile` does by hand.
  */
 export default defineNuxtModule({

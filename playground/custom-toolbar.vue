@@ -5,121 +5,87 @@
       :key="btn.name"
       type="button"
       class="custom-toolbar-btn"
-      :class="{ 'is-active': activeStates.get(btn.name) }"
+      :class="{ 'is-active': state?.[btn.name] }"
       :title="btn.title"
-      :disabled="disabled"
-      @mousedown.prevent="btn.action()"
+      :disabled="!state?.editable"
+      @mousedown.prevent
+      @click="editor && btn.run(editor)"
     >
-      <component :is="btn.icon" :size="16" />
+      {{ btn.label }}
     </button>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, toRef, type Component } from 'vue'
-import { useEditorState, type EditorAPI, type EddyPlugin } from 'eddy-editor/vue'
-import {
-  Bold,
-  Italic,
-  Underline,
-  Strikethrough,
-  Heading1,
-  Heading2,
-  Heading3,
-  Heading4,
-  Heading5,
-  Heading6,
-  Link,
-  List,
-  ListOrdered,
-} from '@lucide/vue'
+import { toRef } from 'vue'
+import { useEditorState } from 'eddy-editor/vue'
+import { promptLink, toggleList, type Editor } from 'eddy-editor'
 
-const props = withDefaults(
-  defineProps<{
-    editor: EditorAPI | null
-    plugins: EddyPlugin[]
-    disabled?: boolean
-  }>(),
-  { disabled: false },
-)
+const props = defineProps<{ editor: Editor | null }>()
 
-const editorRef = toRef(props, 'editor')
-
-interface ToolbarButton {
+interface Button {
   name: string
-  icon: Component
+  label: string
   title: string
-  action: () => void
-  isActive: ((api: EditorAPI) => boolean) | undefined
+  run(ed: Editor): void
+  active(ed: Editor): boolean
 }
 
-function markButton(type: string, icon: Component, title: string): ToolbarButton {
-  const button: ToolbarButton = {
-    name: type,
-    icon,
-    title,
-    action: () => props.editor?.toggleMark(type),
-    isActive: (api) => api.isMarkActive(type),
-  }
-  return button
-}
+const mark = (type: string, label: string, title: string): Button => ({
+  name: type,
+  label,
+  title,
+  run: (ed) => ed.toggleMark(type),
+  active: (ed) => type in ed.getMarks(),
+})
 
-function headingButton(level: 1 | 2 | 3 | 4 | 5 | 6, icon: Component): ToolbarButton {
-  return {
-    name: `heading${level}`,
-    icon,
-    title: `Heading ${level}`,
-    action: () => props.editor?.run('heading.set', level),
-    isActive: (api) => {
-      const block = api.getBlockAt()
-      return block?.type === 'heading' && block.attrs.level === level
-    },
-  }
-}
+const heading = (level: number): Button => ({
+  name: `h${level}`,
+  label: `H${level}`,
+  title: `Heading ${level}`,
+  run: (ed) => ed.setBlock('heading', { level }),
+  active: (ed) => {
+    const b = ed.getBlock()
+    return b?.type === 'heading' && b.attrs.level === level
+  },
+})
 
-function listButton(name: string, icon: Component, title: string, ordered: boolean): ToolbarButton {
-  return {
-    name,
-    icon,
-    title,
-    action: () => props.editor?.run(ordered ? 'list.toggleOrdered' : 'list.toggleUnordered'),
-    isActive: (api) => {
-      const block = api.getBlockAt()
-      return block?.type === 'listItem' && Boolean(block.attrs.ordered) === ordered
-    },
-  }
-}
+const list = (ordered: boolean): Button => ({
+  name: ordered ? 'ol' : 'ul',
+  label: ordered ? '1.' : '•',
+  title: ordered ? 'Numbered list' : 'Bullet list',
+  run: (ed) => toggleList(ed, ordered),
+  active: (ed) => {
+    const b = ed.getBlock()
+    return b?.type === 'listItem' && !!b.attrs.ordered === ordered
+  },
+})
 
-function linkButton(): ToolbarButton {
-  return {
+const buttons: Button[] = [
+  mark('bold', 'B', 'Bold'),
+  mark('italic', 'I', 'Italic'),
+  mark('underline', 'U', 'Underline'),
+  mark('strikethrough', 'S', 'Strikethrough'),
+  {
     name: 'link',
-    icon: Link,
+    label: '🔗',
     title: 'Link',
-    action: () => props.editor?.run('link.prompt'),
-    isActive: (api) => api.isMarkActive('link'),
-  }
-}
-
-const buttons: ToolbarButton[] = [
-  markButton('bold', Bold, 'Bold'),
-  markButton('italic', Italic, 'Italic'),
-  markButton('underline', Underline, 'Underline'),
-  markButton('strikethrough', Strikethrough, 'Strikethrough'),
-  linkButton(),
-  headingButton(1, Heading1),
-  headingButton(2, Heading2),
-  headingButton(3, Heading3),
-  headingButton(4, Heading4),
-  headingButton(5, Heading5),
-  headingButton(6, Heading6),
-  listButton('unorderedList', List, 'Bullet list', false),
-  listButton('orderedList', ListOrdered, 'Numbered list', true),
+    run: promptLink,
+    active: (ed) => 'link' in ed.getMarks(),
+  },
+  ...[1, 2, 3, 4, 5, 6].map(heading),
+  list(false),
+  list(true),
 ]
 
-const items = computed(() => buttons.map((b) => ({ key: b.name, isActive: b.isActive })))
-const activeStates = useEditorState(editorRef, items)
-
-void props.plugins
+// One subscription for the whole toolbar: recomputed on every editor update.
+const state = useEditorState(
+  toRef(props, 'editor'),
+  (ed): Record<string, boolean> => ({
+    editable: ed.editable,
+    ...Object.fromEntries(buttons.map((b) => [b.name, b.active(ed)])),
+  }),
+)
 </script>
 
 <style scoped>
@@ -128,23 +94,20 @@ void props.plugins
   align-items: center;
   gap: 0.25rem;
   padding: 0.375rem 0.5rem;
-  border: 1px solid #e5e7eb;
-  border-bottom: none;
-  border-radius: 0.375rem 0.375rem 0 0;
+  border-bottom: 1px solid #e5e7eb;
   background: #f9fafb;
 }
 
 .custom-toolbar-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 1.75rem;
+  min-width: 1.75rem;
   height: 1.75rem;
-  padding: 0;
+  padding: 0 0.25rem;
   border: 1px solid transparent;
   border-radius: 0.25rem;
   background: none;
   color: #374151;
+  font: inherit;
+  font-size: 0.8125rem;
   cursor: pointer;
 }
 

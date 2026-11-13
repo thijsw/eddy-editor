@@ -1,131 +1,78 @@
-import type { BlockNode, DocumentNode, Mark } from './ast/types'
-import type { ASTSelection } from './ast/selection'
-import type { MarkSpec, BlockSpec, Schema, SchemaRule } from './ast/schema'
-import type { CommandResult } from './ast/commands'
+import type { Attrs, Block, Doc, Marks, Selection, Transform } from './model'
+import type { BlockSpec, MarkSpec, Schema } from './schema'
 
-export type CommandFn = (api: EditorAPI, ...args: unknown[]) => void
+/** Return `false` to pass the key on (to earlier plugins, then the browser). */
+export type KeyHandler = (editor: Editor, event: KeyboardEvent) => boolean | void
 
-export interface ToolbarItem {
-  /** Name of a registered command to run on click. */
-  command: string
-  /** Optional positional arguments spread into `editor.run(command, ...args)`. */
-  args?: unknown[]
-  /** Short display text when no icon is present (also used as aria-label fallback). */
-  label: string
-  /** Tooltip text. */
+export interface ButtonItem {
   title: string
-  /** Framework-specific icon component. Typed as unknown to stay framework-agnostic. */
-  icon?: unknown
-  /** Optional active-state query (drives `is-active` styling and aria-pressed). */
-  isActive?(api: EditorAPI): boolean
+  /** Text shown when there is no icon. Defaults to `title`. */
+  label?: string
+  /** Inner SVG markup for a 24×24 stroke icon. */
+  icon?: string
+  run(editor: Editor): void
+  active?(editor: Editor): boolean
 }
 
-export type EditorEvent = 'change' | 'selectionchange' | 'keydown' | 'paste' | 'destroy'
-
-export interface EventHandlerMap {
-  change: (html: string) => void
-  selectionchange: (selection: ASTSelection | null) => void
-  keydown: (event: KeyboardEvent) => void
-  paste: (event: ClipboardEvent) => void
-  destroy: () => void
+export interface SelectItem {
+  title: string
+  /** `[value, label]` pairs. */
+  options: readonly (readonly [string, string])[]
+  value(editor: Editor): string
+  run(editor: Editor, value: string): void
 }
 
-export interface TransactionAPI {
-  /**
-   * Apply a pure function that transforms the document + selection. History,
-   * schema normalisation, DOM rendering, and change emission are handled
-   * automatically.
-   */
-  apply(fn: (doc: DocumentNode, sel: ASTSelection) => CommandResult): void
-}
+export type ToolbarItem = ButtonItem | SelectItem
 
-export interface PluginContext {
-  readonly editor: EditorAPI
-  /**
-   * Dynamically register a command. Returns a cleanup handle — call it from
-   * the function returned by `setup(ctx)` to tie the command's lifetime to
-   * the plugin. Prefer declaring static commands via `plugin.commands`.
-   *
-   * Event subscription and transactions live on the editor itself:
-   * `ctx.editor.on(...)`, `ctx.editor.tr.apply(...)`.
-   */
-  registerCommand(name: string, fn: CommandFn): () => void
-}
-
-export interface EddyPlugin {
-  /** Unique identifier; duplicate names override one another (last wins). */
-  name: string
-  /** Mark specs this plugin contributes to the schema. */
-  marks?: MarkSpec[]
-  /** Block specs this plugin contributes to the schema. */
-  blocks?: BlockSpec[]
-  /**
-   * Normalisation rules applied after every mutation, in addition to the
-   * built-in rules (merge adjacent text nodes, ensure non-empty blocks).
-   * Each rule is a pure function from doc to doc.
-   */
-  schemaRules?: SchemaRule[]
-  /** Named commands registered into the editor's command registry. */
-  commands?: Record<string, CommandFn>
-  /** Keybinding string → command name. Matched keybindings preventDefault. */
-  keybindings?: Record<string, string>
-  /** Toolbar items rendered by `<EddyToolbar>`. */
+export interface Plugin {
+  marks?: Record<string, MarkSpec>
+  blocks?: Record<string, BlockSpec>
+  /** Keybinding (`'mod+shift+x'`, `'enter'`) → handler. Later plugins win. */
+  keys?: Record<string, KeyHandler>
   toolbar?: ToolbarItem[]
-  /**
-   * Lifecycle hook run once on editor construction. Return an optional cleanup
-   * function called on editor destroy. Use this for event subscriptions,
-   * imperative commands, or complex behavior that doesn't fit the declarative
-   * contributions above.
-   */
-  setup?(ctx: PluginContext): (() => void) | void
+  /** Runs after every change, after the built-in normalisation. */
+  normalize?(doc: Doc): Doc
+  /** Runs once on creation. Return a cleanup for `destroy()`. */
+  setup?(editor: Editor): (() => void) | void
 }
 
-export interface EditorAPI {
+export interface EditorOptions {
+  plugins?: readonly Plugin[]
+  content?: string
+  onChange?(html: string): void
+}
+
+export interface Editor {
   readonly el: HTMLElement
-  readonly doc: DocumentNode
-  readonly selection: ASTSelection | null
   readonly schema: Schema
-  readonly tr: TransactionAPI
+  readonly plugins: readonly Plugin[]
+  readonly doc: Doc
+  readonly selection: Selection | null
+  editable: boolean
 
-  // Mutation primitives.
-  toggleMark(type: string, attrs?: Record<string, unknown>): void
-  setBlockType(type: string, attrs?: Record<string, unknown>): void
-  /**
-   * Parse an HTML string with the editor's schema and insert it at the
-   * current selection. Used by the core plugin's paste handler and available
-   * for programmatic content insertion.
-   */
+  /** Run a transform with history, normalisation and rendering handled. */
+  apply(fn: Transform): void
+  toggleMark(type: string, attrs?: Attrs): void
+  /** Per-block toggle: blocks already of this type and attrs become paragraphs. */
+  setBlock(type: string, attrs?: Attrs): void
+  /** Insert after the current block (or replace it, if an empty paragraph). */
+  insertBlock(type: string, attrs?: Attrs): void
   insertHTML(html: string): void
-  /**
-   * Insert a new block at the cursor. The block type must be registered in
-   * the schema; the new block's id is assigned automatically and its inline
-   * children default to a single empty text node.
-   *
-   * Placement: replaces the current block if it's an empty paragraph,
-   * otherwise inserts after it. Cursor placement: inside the new block for
-   * regular blocks; for atom blocks the cursor moves into the next non-atom
-   * block (or a freshly created trailing paragraph if there isn't one).
-   */
-  insertBlock(spec: { type: string; attrs?: Record<string, unknown> }): void
+  /** Insert plain text; newlines start new paragraphs. */
+  insertText(text: string): void
 
-  // History.
+  getMarks(): Marks
+  getBlock(): Block | null
+  getHTML(): string
+  setHTML(html: string): void
+  isEmpty(): boolean
+
   undo(): void
   redo(): void
-  /**
-   * Flush any debounced typing state into history. Call this before passing
-   * control to a native browser operation (e.g. Shift+Enter that lets the
-   * browser insert a `<br>`) so subsequent edits undo cleanly.
-   */
-  pushHistory(): void
+  /** Close the current typing group in history. */
+  commit(): void
 
-  // Inspection.
-  isMarkActive(type: string): boolean
-  getMarkAt(type: string): Mark | null
-  getBlockAt(): BlockNode | null
-
-  // Named command dispatch.
-  run(command: string, ...args: unknown[]): void
-
-  // Event subscription. Returns an unsubscribe function.
-  on<E extends EditorEvent>(event: E, handler: EventHandlerMap[E]): () => void
+  /** Called after every document or selection change. Returns unsubscribe. */
+  subscribe(fn: () => void): () => void
+  destroy(): void
 }

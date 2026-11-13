@@ -10,8 +10,8 @@ export default defineConfig({
   base: '/eddy-editor/',
   resolve: {
     alias: {
-      'eddy-editor/vue': resolve(__dirname, 'src/vue/index.ts'),
-      'eddy-editor/react': resolve(__dirname, 'src/react/index.ts'),
+      'eddy-editor/vue': resolve(__dirname, 'src/vue.ts'),
+      'eddy-editor/react': resolve(__dirname, 'src/react.tsx'),
       'eddy-editor': resolve(__dirname, 'src/index.ts'),
     },
   },

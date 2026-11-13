@@ -486,7 +486,6 @@ export function defineEditorSuite(mount: MountFn): void {
     await setDisabled(true)
     const editor = document.querySelector('.eddy-editor') as HTMLElement
     expect(editor.getAttribute('contenteditable')).toBe('false')
-    expect(editor.className).toContain('is-disabled')
 
     editor.focus()
     await type('should not appear')

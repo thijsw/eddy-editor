@@ -11,7 +11,7 @@ export default defineConfig({
         extends: true,
         test: {
           name: 'unit',
-          include: ['tests/ast/**/*.test.ts', 'tests/nuxt/**/*.test.ts'],
+          include: ['tests/unit/**/*.test.ts', 'tests/nuxt/**/*.test.ts'],
           environment: 'jsdom',
         },
       },
