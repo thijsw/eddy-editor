@@ -6,6 +6,7 @@ import {
   list,
   markRange,
   marksAt,
+  mountToolbar,
   setLink,
   toggleList,
   type Editor,
@@ -498,6 +499,31 @@ describe('plugins', () => {
     select(0, 0, 2)
     ed.apply((doc, sel) => [markRange(doc, sel, 'shout', { level: 2 })])
     expect(marksAt(ed.doc, ed.selection!)).toEqual({ shout: { level: 2 } })
+  })
+})
+
+describe('toolbar', () => {
+  it('button items infer the editor type for run/active (strict TS) and work', () => {
+    // Unannotated `(ed) =>`: an implicit-any error under strict mode before the fix.
+    const shout: Plugin = {
+      marks: { shout: { match: 'mark', render: 'mark' } },
+      toolbar: [
+        {
+          title: 'Shout',
+          run: (ed) => ed.toggleMark('shout'),
+          active: (ed) => 'shout' in ed.getMarks(),
+        },
+      ],
+    }
+    mount('<p>ab</p>', [shout])
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+    mountToolbar(host, ed)
+    select(0, 0, 2)
+    const button = host.querySelector('button')!
+    button.click()
+    expect(html).toBe('<p><mark>ab</mark></p>')
+    expect(button.getAttribute('aria-pressed')).toBe('true')
   })
 })
 

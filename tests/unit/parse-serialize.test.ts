@@ -138,6 +138,32 @@ describe('serialize', () => {
     expect(serialize(doc, schema, true)).toBe(`<p data-block-id="${doc[0].id}">x</p>`)
   })
 
+  it('renders string children in a DOMSpec as escaped text, never as tags', () => {
+    const s = createSchema([
+      {
+        blocks: {
+          figure: {
+            match: 'figure',
+            atom: true,
+            attrs: (el) => ({ caption: el.textContent }),
+            render: (b) => ['figure', {}, ['figcaption', {}, b.attrs.caption]],
+          },
+        },
+      },
+    ])
+    const doc = [
+      {
+        id: 'a',
+        type: 'figure',
+        attrs: { caption: 'img src=x onerror=alert(1) <b>' },
+        children: [],
+      },
+    ]
+    expect(serialize(doc, s)).toBe(
+      '<figure><figcaption>img src=x onerror=alert(1) &lt;b&gt;</figcaption></figure>',
+    )
+  })
+
   it('clamps heading levels', () => {
     const doc = [{ id: 'a', type: 'heading', attrs: { level: '9 onclick=x' }, children: [] }]
     expect(serialize(doc, schema)).toBe('<h1><br></h1>')
