@@ -26,7 +26,8 @@ export default defineConfig({
     rolldownOptions: {
       external: ['vue', 'react', 'react/jsx-runtime', '@nuxt/kit'],
     },
-    sourcemap: true,
+    // No maps: the ES output is unminified and readable, and maps were half the tarball.
+    sourcemap: false,
     emptyOutDir: true,
   },
 })

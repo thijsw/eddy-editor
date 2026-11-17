@@ -2,8 +2,7 @@
 // of text nodes plus one per <br>, inside the element carrying the block id.
 
 import type { Pos, Selection } from './model'
-
-const ID = 'data-block-id'
+import { ID } from './schema'
 const blockOf = (n: Node) =>
   (n.nodeType == 1 ? (n as Element) : n.parentElement)?.closest(`[${ID}]`)
 

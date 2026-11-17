@@ -5,6 +5,9 @@ import type { Attrs, Block, Doc, TextNode } from './model'
 import { createBlock, eq, newId } from './model'
 import type { Plugin } from './types'
 
+/** Attribute carrying block ids in the live editor DOM. */
+export const ID = 'data-block-id'
+
 /**
  * Rendering shape: a tag name, or `[tag, attrs?, ...children]`. A child is a
  * nested `[tag, …]` array, a string (escaped text), or `0` (the content hole).
@@ -97,7 +100,6 @@ const DROP = 'script,style,template,head,title,meta,link,noscript,xml,o\\:p'
 // Dropped unless a block spec claims them (embed plugins).
 const EMBED = 'iframe,object,embed'
 const SKIP = DROP + ',' + EMBED
-const ID = 'data-block-id'
 
 /**
  * Parse HTML (a string, or a live node's children) into a document. Pass
@@ -126,11 +128,16 @@ export function parse(input: string | Node, schema: Schema, live?: Map<string, B
     return c
   }
 
+  // A spec's attrs for `el`, or false when it doesn't match.
+  const read = (spec: MarkSpec | BlockSpec, el: Element): Attrs | false => {
+    if (!el.matches(spec.match)) return false
+    const a = spec.attrs?.(el, root)
+    return a === false ? a : a || {}
+  }
   const match = (el: Element) => {
     for (const [type, spec] of blocks) {
-      if (!el.matches(spec.match)) continue
-      const attrs = spec.attrs ? spec.attrs(el, root) : {}
-      if (attrs !== false) return [type, spec, attrs || {}] as const
+      const attrs = read(spec, el)
+      if (attrs) return [type, spec, attrs] as const
     }
     return undefined
   }
@@ -140,9 +147,8 @@ export function parse(input: string | Node, schema: Schema, live?: Map<string, B
     if (!isEl(n) || n.matches(SKIP)) return []
     if (n.nodeName == 'BR') return [{ text: '\n', marks: m }]
     for (const [type, spec] of marks) {
-      if (!n.matches(spec.match)) continue
-      const attrs = spec.attrs ? spec.attrs(n) : {}
-      if (attrs !== false) m = { ...m, [type]: attrs || {} }
+      const attrs = read(spec, n)
+      if (attrs) m = { ...m, [type]: attrs }
     }
     return [...n.childNodes].flatMap((c) => inline(c, m))
   }
