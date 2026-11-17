@@ -1,4 +1,4 @@
-import type { Block, Doc, Selection, TextNode, Transform } from './model'
+import type { Block, Doc, Selection, Transform } from './model'
 import {
   caret,
   createBlock,
@@ -11,11 +11,10 @@ import {
   slice,
   textLength,
 } from './model'
-import { createSchema, normalize, parse, serialize } from './schema'
+import { ID, createSchema, normalize, parse, serialize } from './schema'
 import { applySelection, readSelection } from './dom'
 import type { Editor, EditorOptions, KeyHandler } from './types'
 
-const ID = 'data-block-id'
 // set() modes
 const COMMAND = 0 // render, record history
 const INPUT = 1 // DOM already updated by the browser; debounce history
@@ -144,25 +143,6 @@ export function createEditor(el: HTMLElement, opts: EditorOptions = {}): Editor 
     return [[...d.slice(0, i), b, ...d.slice(j + 1)], caret(a.block, a.offset)]
   }
 
-  const split: Transform = (d, s) => {
-    ;[d, s] = cut(d, s)
-    const { block: id, offset } = s.anchor
-    const i = indexOf(d, id)
-    const b = d[i]
-    const { continues } = spec(b)
-    const len = textLength(b.children)
-    if (continues && !len) {
-      return [[...d.slice(0, i), { ...b, type: 'paragraph', attrs: {} }, ...d.slice(i + 1)]]
-    }
-    // The new block continues the type (lists) or falls back to a paragraph.
-    const fresh = (c: TextNode[]) =>
-      continues ? createBlock(b.type, c, b.attrs) : createBlock('paragraph', c)
-    if (!offset && len) return [[...d.slice(0, i), fresh([]), ...d.slice(i)]]
-    const right = fresh(slice(b.children, offset))
-    const left = { ...b, children: slice(b.children, 0, offset) }
-    return [[...d.slice(0, i), left, right, ...d.slice(i + 1)], caret(right.id)]
-  }
-
   const insert =
     (ins: Doc): Transform =>
     (d, s) => {
@@ -190,6 +170,21 @@ export function createEditor(el: HTMLElement, opts: EditorOptions = {}): Editor 
         caret(end.id, textLength(end.children) - textLength(after)),
       ]
     }
+
+  // Enter. An empty continuing block (list item) exits to a paragraph; at
+  // block start a paragraph opens above; otherwise the block splits, the new
+  // half continuing the type (lists) or becoming a paragraph.
+  const split: Transform = (d, s) => {
+    const b = d[indexOf(d, s.anchor.block)]
+    const { continues } = spec(b)
+    const fresh = () => (continues ? createBlock(b.type, [], b.attrs) : createBlock())
+    if (!isCollapsed(s)) [d, s] = cut(d, s)
+    else if (!s.anchor.offset && b.children.length)
+      return [d.flatMap((x) => (x == b ? [fresh(), b] : x))]
+    else if (continues && !b.children.length)
+      return [d.map((x) => (x == b ? { ...b, type: 'paragraph', attrs: {} } : x))]
+    return insert([createBlock(b.type, [], b.attrs), fresh()])(d, s)
+  }
 
   // Backspace/Delete next to (or inside) an atom removes the atom.
   const deleteAtom =
