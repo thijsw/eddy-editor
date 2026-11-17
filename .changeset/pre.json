@@ -5,6 +5,7 @@
     "eddy-editor": "0.5.0"
   },
   "changesets": [
+    "fix-domspec-text",
     "v1-rewrite"
   ]
 }
