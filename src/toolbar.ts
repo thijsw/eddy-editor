@@ -17,7 +17,7 @@ export function mountToolbar(
   host.setAttribute('role', 'toolbar')
   host.replaceChildren(
     ...items.map((item) => {
-      if ('options' in item) {
+      if (item.options) {
         const s = document.createElement('select')
         s.className = 'eddy-toolbar-select'
         s.title = item.title

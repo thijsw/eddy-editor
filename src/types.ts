@@ -12,6 +12,8 @@ export interface ButtonItem {
   icon?: string
   run(editor: Editor): void
   active?(editor: Editor): boolean
+  /** Discriminates from `SelectItem`, so `run: (ed) => …` infers its type. */
+  options?: undefined
 }
 
 export interface SelectItem {

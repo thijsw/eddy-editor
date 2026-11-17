@@ -220,8 +220,8 @@ export const list: Plugin = {
     {
       title: 'Bullet list',
       icon: p('M3 12h.01', 'M3 18h.01', 'M3 6h.01', 'M8 12h13', 'M8 18h13', 'M8 6h13'),
-      run: (ed: Editor) => toggleList(ed, false),
-      active: (ed: Editor) => isList(ed, false),
+      run: (ed) => toggleList(ed, false),
+      active: (ed) => isList(ed, false),
     },
     {
       title: 'Numbered list',
@@ -233,8 +233,8 @@ export const list: Plugin = {
         'M4 6h1v4',
         'M6 18H4c0-1 2-2 2-3s-1-1.5-2-1',
       ),
-      run: (ed: Editor) => toggleList(ed, true),
-      active: (ed: Editor) => isList(ed, true),
+      run: (ed) => toggleList(ed, true),
+      active: (ed) => isList(ed, true),
     },
   ],
 }

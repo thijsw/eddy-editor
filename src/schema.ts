@@ -6,11 +6,14 @@ import { createBlock, eq, newId } from './model'
 import type { Plugin } from './types'
 
 /**
- * Rendering shape: a tag name, or `[tag, attrs?, ...children]` where a child
- * is a nested shape or `0` (the content hole). Without children the content
- * goes directly inside the tag: `['a', { href }]` → `<a href="…">…</a>`.
+ * Rendering shape: a tag name, or `[tag, attrs?, ...children]`. A child is a
+ * nested `[tag, …]` array, a string (escaped text), or `0` (the content hole).
+ * Without children the content goes directly inside the tag:
+ * `['a', { href }]` → `<a href="…">…</a>`; `['pre', ['code', 0]]`;
+ * `['figcaption', {}, caption]` renders `caption` as text.
  */
-export type DOMSpec = string | readonly [string, ...(Attrs | DOMSpec | 0)[]]
+export type DOMSpec = string | DOMArray
+type DOMArray = readonly [string, ...(Attrs | DOMArray | string | 0)[]]
 
 export interface MarkSpec {
   /** CSS selector of elements that carry this mark, e.g. `'strong,b'`. */
@@ -218,7 +221,9 @@ function dom(spec: DOMSpec, inner: string, extra = ''): string {
   }
   if (VOID.test(tag)) return `<${tag}${attrs}${extra}>`
   const body = rest.length
-    ? rest.map((c) => (c === 0 ? inner : dom(c as DOMSpec, inner))).join('')
+    ? rest
+        .map((c) => (c === 0 ? inner : typeof c == 'string' ? esc(c) : dom(c as DOMArray, inner)))
+        .join('')
     : inner
   return `<${tag}${attrs}${extra}>${body}</${tag}>`
 }
